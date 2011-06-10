@@ -410,11 +410,8 @@ static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
 	struct zram_meta *meta = zram->meta;
 	page = bvec->bv_page;
 
-	if (unlikely(!meta->table[index].handle) ||
-			zram_test_flag(meta, index, ZRAM_ZERO)) {
-		handle_zero_page(bvec);
-		return 0;
-	}
+	user_mem = kmap_atomic(page, KM_USER0);
+	cmem = kmap_atomic(zram->table[index].page, KM_USER1);
 
 	if (is_partial_io(bvec))
 		/* Use  a temporary buffer to decompress the page */
