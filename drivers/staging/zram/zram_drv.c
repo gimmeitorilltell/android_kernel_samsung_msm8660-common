@@ -88,13 +88,7 @@ snappy_decompress_(
 
 /* Globals */
 static int zram_major;
-static struct zram *zram_devices;
-
-/*
- * We don't need to see memory allocation errors more than once every 1
- * second to know that a problem is occurring.
- */
-#define ALLOC_ERROR_LOG_RATE_MS 1000
+struct zram *zram_devices;
 
 /* Module params (documentation at end) */
 static unsigned int num_devices = 2;
@@ -963,6 +957,7 @@ static int __init zram_init(void)
 	}
 
 	/* Allocate the device array and initialize each one */
+	pr_info("Creating %u devices ...\n", num_devices);
 	zram_devices = kzalloc(num_devices * sizeof(struct zram), GFP_KERNEL);
 	if (!zram_devices) {
 		ret = -ENOMEM;
