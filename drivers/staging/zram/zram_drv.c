@@ -757,42 +757,27 @@ static void __zram_make_request(struct zram *zram, struct bio *bio, int rw)
 	index = bio->bi_sector >> SECTORS_PER_PAGE_SHIFT;
 	offset = (bio->bi_sector & (SECTORS_PER_PAGE - 1)) << SECTOR_SHIFT;
 
-	bio_for_each_segment(bvec, bio, i) {
-		int max_transfer_size = PAGE_SIZE - offset;
-
-		if (bvec->bv_len > max_transfer_size) {
-			/*
-			 * zram_bvec_rw() can only make operation on a single
-			 * zram page. Split the bio vector.
-			 */
-			struct bio_vec bv;
-
-			bv.bv_page = bvec->bv_page;
-			bv.bv_len = max_transfer_size;
-			bv.bv_offset = bvec->bv_offset;
-
-			if (zram_bvec_rw(zram, &bv, index, offset, bio, rw) < 0)
-				goto out;
-
-			bv.bv_len = bvec->bv_len - max_transfer_size;
-			bv.bv_offset += max_transfer_size;
-			if (zram_bvec_rw(zram, &bv, index+1, 0, bio, rw) < 0)
-				goto out;
-		} else
-			if (zram_bvec_rw(zram, bvec, index, offset, bio, rw)
-			    < 0)
-				goto out;
-
-		update_position(&index, &offset, bvec);
+	zram->compress_workmem = kzalloc(LZO1X_MEM_COMPRESS, GFP_KERNEL);
+	if (!zram->compress_workmem) {
+		pr_err("Error allocating compressor working memory!\n");
+		ret = -ENOMEM;
+		goto fail_no_table;
 	}
 
-	set_bit(BIO_UPTODATE, &bio->bi_flags);
-	bio_endio(bio, 0);
-	return;
+	zram->compress_buffer = (void *)__get_free_pages(__GFP_ZERO, 1);
+	if (!zram->compress_buffer) {
+		pr_err("Error allocating compressor buffer space\n");
+		ret = -ENOMEM;
+		goto fail_no_table;
+	}
 
-out:
-	bio_io_error(bio);
-}
+	num_pages = zram->disksize >> PAGE_SHIFT;
+	zram->table = vzalloc(num_pages * sizeof(*zram->table));
+	if (!zram->table) {
+		pr_err("Error allocating zram address table\n");
+		ret = -ENOMEM;
+		goto fail_no_table;
+	}
 
 /*
  * Handler function for all zram I/O requests.
@@ -815,6 +800,9 @@ static int zram_make_request(struct request_queue *queue, struct bio *bio)
 
 	return 0;
 
+fail_no_table:
+	/* To prevent accessing table entries during cleanup */
+	zram->disksize = 0;
 fail:
 	__zram_reset_device(zram);
 	up_write(&zram->init_lock);
