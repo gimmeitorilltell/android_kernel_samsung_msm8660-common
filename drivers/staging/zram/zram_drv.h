@@ -36,8 +36,8 @@ static const size_t max_zpage_size = PAGE_SIZE / 4 * 3;
 
 /*
  * NOTE: max_zpage_size must be less than or equal to:
- *   ZS_MAX_ALLOC_SIZE. Otherwise, zs_malloc() would
- * always return failure.
+ *   ZS_MAX_ALLOC_SIZE - sizeof(struct zobj_header)
+ * otherwise, xv_malloc() would always return failure.
  */
 
 /*-- End of configurable params */
@@ -63,7 +63,7 @@ enum zram_pageflags {
 
 /* Allocated for each disk page */
 struct table {
-	unsigned long handle;
+	void *handle;
 	u16 size;	/* object size (excluding header) */
 	u8 count;	/* object ref count (not yet used) */
 	u8 flags;
@@ -87,7 +87,8 @@ struct zram_stats {
 	u32 bad_compress;	/* % of pages with compression ratio>=75% */
 };
 
-struct zram_meta {
+struct zram {
+	struct zs_pool *mem_pool;
 	void *compress_workmem;
 	void *compress_buffer;
 	struct table *table;
