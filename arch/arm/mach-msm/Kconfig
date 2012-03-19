@@ -1397,6 +1397,10 @@ config MSM_MPDEC_INPUTBOOST_CPUMIN
 	help
 	  This pushes the cpu min speed to predefined values on input events.
 
+config CPU_VOLTAGE_TABLE
+	bool "Enable CPU Voltage Table via sysfs for adjustements"
+	default n
+
 if CPU_FREQ_MSM
 
 config MSM_CPU_FREQ_SET_MIN_MAX
