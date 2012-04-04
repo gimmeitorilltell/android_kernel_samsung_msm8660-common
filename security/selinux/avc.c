@@ -738,8 +738,8 @@ static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
 }
 
 /* This is the slow part of avc audit with big stack footprint */
-static noinline int slow_avc_audit(u32 ssid, u32 tsid, u16 tclass,
-		u32 requested, u32 audited, u32 denied, int result,
+noinline int slow_avc_audit(u32 ssid, u32 tsid, u16 tclass,
+		u32 requested, u32 audited, u32 denied,
 		struct common_audit_data *a,
 		unsigned flags)
 {
