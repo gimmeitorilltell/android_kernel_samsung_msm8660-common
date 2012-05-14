@@ -672,32 +672,47 @@ static ssize_t disksize_store(struct device *dev,
 	struct zram_meta *meta;
 	struct zram *zram = dev_to_zram(dev);
 
-	disksize = memparse(buf, NULL);
-	if (!disksize)
-		return -EINVAL;
+	if (unlikely(!zram->init_done) && zram_init_device(zram))
+		goto error;
 
-	disksize = PAGE_ALIGN(disksize);
-	meta = zram_meta_alloc(disksize);
-	down_write(&zram->init_lock);
-	if (zram->init_done) {
-		up_write(&zram->init_lock);
-		zram_meta_free(meta);
-		pr_info("Cannot change disksize for initialized device\n");
-		return -EBUSY;
+	down_read(&zram->init_lock);
+	if (unlikely(!zram->init_done))
+		goto error_unlock;
+
+	if (!valid_io_request(zram, bio)) {
+		zram_stat64_inc(zram, &zram->stats.invalid_io);
+		goto error_unlock;
 	}
 
 	__zram_make_request(zram, bio, bio_data_dir(bio));
+	up_read(&zram->init_lock);
 
-	return len;
+	return 0;
+
+error_unlock:
+	up_read(&zram->init_lock);
+error:
+	bio_io_error(bio);
+	return 0;
 }
 
-static ssize_t reset_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t len)
+void __zram_reset_device(struct zram *zram)
 {
-	int ret;
-	unsigned short do_reset;
-	struct zram *zram;
-	struct block_device *bdev;
+	size_t index;
+
+	zram->init_done = 0;
+
+	/* Free various per-device buffers */
+	kfree(zram->compress_workmem);
+	free_pages((unsigned long)zram->compress_buffer, 1);
+
+	zram->compress_workmem = NULL;
+	zram->compress_buffer = NULL;
+
+	/* Free all pages that are still in this zram device */
+	for (index = 0; index < zram->disksize >> PAGE_SHIFT; index++) {
+		struct page *page;
+		u16 offset;
 
 	zram = dev_to_zram(dev);
 	bdev = bdget_disk(zram->disk, 0);
@@ -717,23 +732,26 @@ static ssize_t reset_store(struct device *dev,
 	if (bdev)
 		fsync_bdev(bdev);
 
-	zram_reset_device(zram, true);
-	return len;
+	zram->disksize = 0;
+}
+
+void zram_reset_device(struct zram *zram)
+{
+	down_write(&zram->init_lock);
+	__zram_reset_device(zram);
+	up_write(&zram->init_lock);
 }
 
 static void __zram_make_request(struct zram *zram, struct bio *bio, int rw)
 {
-	int i, offset;
-	u32 index;
-	struct bio_vec *bvec;
+	int ret;
+	size_t num_pages;
 
-	switch (rw) {
-	case READ:
-		atomic64_inc(&zram->stats.num_reads);
-		break;
-	case WRITE:
-		atomic64_inc(&zram->stats.num_writes);
-		break;
+	down_write(&zram->init_lock);
+
+	if (zram->init_done) {
+		up_write(&zram->init_lock);
+		return 0;
 	}
 
 	index = bio->bi_sector >> SECTORS_PER_PAGE_SHIFT;
@@ -792,25 +810,16 @@ static int zram_make_request(struct request_queue *queue, struct bio *bio)
 		goto error;
 	}
 
-	__zram_make_request(zram, bio, bio_data_dir(bio));
-	up_read(&zram->init_lock);
+	zram->init_done = 1;
+	up_write(&zram->init_lock);
 
 	return 0;
 
-error:
-	up_read(&zram->init_lock);
-	bio_io_error(bio);
-	return -1;
-}
-
-static void zram_slot_free(struct work_struct *work)
-{
-	struct zram *zram;
-
-	zram = container_of(work, struct zram, free_work);
-	down_write(&zram->lock);
-	handle_pending_slot_free(zram);
-	up_write(&zram->lock);
+fail:
+	__zram_reset_device(zram);
+	up_write(&zram->init_lock);
+	pr_err("Initialization failed: err=%d\n", ret);
+	return ret;
 }
 
 static void add_slot_free(struct zram *zram, struct zram_slot_free *free_rq)
@@ -881,7 +890,7 @@ static int create_device(struct zram *zram, int device_id)
 	int ret = -ENOMEM;
 
 	init_rwsem(&zram->lock);
-	mutex_init(&zram->init_lock);
+	init_rwsem(&zram->init_lock);
 	spin_lock_init(&zram->stat64_lock);
 
 	zram->queue = blk_alloc_queue(GFP_KERNEL);

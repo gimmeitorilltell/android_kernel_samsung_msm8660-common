@@ -108,4 +108,14 @@ struct zram_meta {
 
 	struct zram_stats stats;
 };
+
+extern struct zram *devices;
+extern unsigned int num_devices;
+#ifdef CONFIG_SYSFS
+extern struct attribute_group zram_disk_attr_group;
+#endif
+
+extern int zram_init_device(struct zram *zram);
+extern void __zram_reset_device(struct zram *zram);
+
 #endif
