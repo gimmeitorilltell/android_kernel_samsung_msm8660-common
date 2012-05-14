@@ -430,207 +430,200 @@ static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
 		goto out_cleanup;
 	}
 
-	ret = zram_decompress_page(zram, uncmem, index);
-	/* Should NEVER happen. Return bio error if it does. */
-	if (unlikely(ret))
-		goto out_cleanup;
-
-	if (is_partial_io(bvec))
-		memcpy(user_mem + bvec->bv_offset, uncmem + offset,
-				bvec->bv_len);
-
-	flush_dcache_page(page);
-	ret = 0;
-out_cleanup:
-	kunmap_atomic(user_mem);
-	if (is_partial_io(bvec))
-		kfree(uncmem);
-	return ret;
-}
-
-static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
-			   int offset)
+static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
+			  u32 index, struct bio *bio)
 {
-	int ret = 0;
+	int ret;
 	size_t clen;
-	unsigned long handle;
 	struct page *page;
-	unsigned char *user_mem, *cmem, *src, *uncmem = NULL;
-	struct zram_meta *meta = zram->meta;
-	static unsigned long zram_rs_time;
+	struct zobj_header *zheader;
+	unsigned char *user_mem, *cmem;
 
 	page = bvec->bv_page;
-	src = meta->compress_buffer;
 
-	if (is_partial_io(bvec)) {
-		/*
-		 * This is a partial IO. We need to read the full page
-		 * before to write the changes.
-		 */
-		uncmem = kmalloc(PAGE_SIZE, GFP_NOIO);
-		if (!uncmem) {
-			ret = -ENOMEM;
-			goto out;
-		}
-		ret = zram_decompress_page(zram, uncmem, index);
-		if (ret)
-			goto out;
+	if (zram_test_flag(zram, index, ZRAM_ZERO)) {
+		handle_zero_page(page);
+		return 0;
 	}
 
-	user_mem = kmap_atomic(page);
-
-	if (is_partial_io(bvec)) {
-		memcpy(uncmem + offset, user_mem + bvec->bv_offset,
-		       bvec->bv_len);
-		kunmap_atomic(user_mem);
-		user_mem = NULL;
-	} else {
-		uncmem = user_mem;
+	/* Requested page is not present in compressed area */
+	if (unlikely(!zram->table[index].page)) {
+		pr_debug("Read before write: sector=%lu, size=%u",
+			 (ulong)(bio->bi_sector), bio->bi_size);
+		handle_zero_page(page);
+		return 0;
 	}
 
-	if (page_zero_filled(uncmem)) {
-		kunmap_atomic(user_mem);
-		/* Free memory associated with this sector now. */
-		zram_free_page(zram, index);
-
-		zram->stats.pages_zero++;
-		zram_set_flag(meta, index, ZRAM_ZERO);
-		ret = 0;
-		goto out;
+	/* Page is stored uncompressed since it's incompressible */
+	if (unlikely(zram_test_flag(zram, index, ZRAM_UNCOMPRESSED))) {
+		handle_uncompressed_page(zram, page, index);
+		return 0;
 	}
 
-	/*
-	 * zram_slot_free_notify could miss free so that let's
-	 * double check.
-	 */
-	if (unlikely(meta->table[index].handle ||
-			zram_test_flag(meta, index, ZRAM_ZERO)))
-		zram_free_page(zram, index);
+	user_mem = kmap_atomic(page, KM_USER0);
+	clen = PAGE_SIZE;
 
-	ret = COMPRESS(uncmem, PAGE_SIZE, src, &clen,
-			       meta->compress_workmem);
+	cmem = kmap_atomic(zram->table[index].page, KM_USER1) +
+		zram->table[index].offset;
 
-	if (!is_partial_io(bvec)) {
-		kunmap_atomic(user_mem);
-		user_mem = NULL;
-		uncmem = NULL;
+	ret = lzo1x_decompress_safe(cmem + sizeof(*zheader),
+				    xv_get_object_size(cmem) - sizeof(*zheader),
+				    user_mem, &clen);
+
+	kunmap_atomic(user_mem, KM_USER0);
+	kunmap_atomic(cmem, KM_USER1);
+
+	/* Should NEVER happen. Return bio error if it does. */
+	if (unlikely(ret != LZO_E_OK)) {
+		pr_err("Decompression failed! err=%d, page=%u\n", ret, index);
+		zram_stat64_inc(zram, &zram->stats.failed_reads);
+		return ret;
 	}
 
-	if (unlikely(ret)) {
-		pr_err("Compression failed! err=%d\n", ret);
-		goto out;
-	}
+	flush_dcache_page(page);
 
-	if (unlikely(clen > max_zpage_size)) {
-		zram->stats.bad_compress++;
-		clen = PAGE_SIZE;
-		src = NULL;
-		if (is_partial_io(bvec))
-			src = uncmem;
-	}
-
-	handle = zs_malloc(meta->mem_pool, clen);
-	if (!handle) {
-		if (printk_timed_ratelimit(&zram_rs_time,
-					   ALLOC_ERROR_LOG_RATE_MS))
-			pr_info("Error allocating memory for compressed page: %u, size=%zu\n",
-				index, clen);
-		ret = -ENOMEM;
-		goto out;
-	}
-	cmem = zs_map_object(meta->mem_pool, handle, ZS_MM_WO);
-
-	if ((clen == PAGE_SIZE) && !is_partial_io(bvec)) {
-		src = kmap_atomic(page);
-		copy_page(cmem, src);
-		kunmap_atomic(src);
-	} else {
-		memcpy(cmem, src, clen);
-	}
-
-	zs_unmap_object(meta->mem_pool, handle);
-
-	/*
-	 * Free memory associated with this sector
-	 * before overwriting unused sectors.
-	 */
-	zram_free_page(zram, index);
-
-	meta->table[index].handle = handle;
-	meta->table[index].size = clen;
-
-	/* Update stats */
-	atomic64_add(clen, &zram->stats.compr_size);
-	zram->stats.pages_stored++;
-	if (clen <= PAGE_SIZE / 2)
-		zram->stats.good_compress++;
-
-out:
-	if (is_partial_io(bvec))
-		kfree(uncmem);
-
-	if (ret)
-		atomic64_inc(&zram->stats.failed_writes);
-	return ret;
+	return 0;
 }
 
-static void handle_pending_slot_free(struct zram *zram)
+static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index)
 {
-	struct zram_slot_free *free_rq;
+	int ret;
+	u32 offset;
+	size_t clen;
+	struct zobj_header *zheader;
+	struct page *page, *page_store;
+	unsigned char *user_mem, *cmem, *src;
 
-	spin_lock(&zram->slot_free_lock);
-	while (zram->slot_free_rq) {
-		free_rq = zram->slot_free_rq;
-		zram->slot_free_rq = free_rq->next;
-		zram_free_page(zram, free_rq->index);
-		kfree(free_rq);
+	page = bvec->bv_page;
+	src = zram->compress_buffer;
+
+	/*
+	 * System overwrites unused sectors. Free memory associated
+	 * with this sector now.
+	 */
+	if (zram->table[index].page ||
+	    zram_test_flag(zram, index, ZRAM_ZERO))
+		zram_free_page(zram, index);
+
+	mutex_lock(&zram->lock);
+
+	user_mem = kmap_atomic(page, KM_USER0);
+	if (page_zero_filled(user_mem)) {
+		kunmap_atomic(user_mem, KM_USER0);
+		mutex_unlock(&zram->lock);
+		zram_stat_inc(&zram->stats.pages_zero);
+		zram_set_flag(zram, index, ZRAM_ZERO);
+		return 0;
 	}
-	spin_unlock(&zram->slot_free_lock);
+
+	ret = lzo1x_1_compress(user_mem, PAGE_SIZE, src, &clen,
+			       zram->compress_workmem);
+
+	kunmap_atomic(user_mem, KM_USER0);
+
+	if (unlikely(ret != LZO_E_OK)) {
+		mutex_unlock(&zram->lock);
+		pr_err("Compression failed! err=%d\n", ret);
+		zram_stat64_inc(zram, &zram->stats.failed_writes);
+		return ret;
+	}
+
+	/*
+	 * Page is incompressible. Store it as-is (uncompressed)
+	 * since we do not want to return too many disk write
+	 * errors which has side effect of hanging the system.
+	 */
+	if (unlikely(clen > max_zpage_size)) {
+		clen = PAGE_SIZE;
+		page_store = alloc_page(GFP_NOIO | __GFP_HIGHMEM);
+		if (unlikely(!page_store)) {
+			mutex_unlock(&zram->lock);
+			pr_info("Error allocating memory for "
+				"incompressible page: %u\n", index);
+			zram_stat64_inc(zram, &zram->stats.failed_writes);
+				return -ENOMEM;
+			}
+
+		offset = 0;
+		zram_set_flag(zram, index, ZRAM_UNCOMPRESSED);
+		zram_stat_inc(&zram->stats.pages_expand);
+		zram->table[index].page = page_store;
+		src = kmap_atomic(page, KM_USER0);
+		goto memstore;
+	}
+
+	if (xv_malloc(zram->mem_pool, clen + sizeof(*zheader),
+		      &zram->table[index].page, &offset,
+		      GFP_NOIO | __GFP_HIGHMEM)) {
+		mutex_unlock(&zram->lock);
+		pr_info("Error allocating memory for compressed "
+			"page: %u, size=%zu\n", index, clen);
+		zram_stat64_inc(zram, &zram->stats.failed_writes);
+		return -ENOMEM;
+	}
+
+memstore:
+	zram->table[index].offset = offset;
+
+	cmem = kmap_atomic(zram->table[index].page, KM_USER1) +
+		zram->table[index].offset;
+
+#if 0
+	/* Back-reference needed for memory defragmentation */
+	if (!zram_test_flag(zram, index, ZRAM_UNCOMPRESSED)) {
+		zheader = (struct zobj_header *)cmem;
+		zheader->table_idx = index;
+		cmem += sizeof(*zheader);
+	}
+#endif
+
+	memcpy(cmem, src, clen);
+
+	kunmap_atomic(cmem, KM_USER1);
+	if (unlikely(zram_test_flag(zram, index, ZRAM_UNCOMPRESSED)))
+		kunmap_atomic(src, KM_USER0);
+
+	/* Update stats */
+	zram_stat64_add(zram, &zram->stats.compr_size, clen);
+	zram_stat_inc(&zram->stats.pages_stored);
+	if (clen <= PAGE_SIZE / 2)
+		zram_stat_inc(&zram->stats.good_compress);
+
+	mutex_unlock(&zram->lock);
+
+	return 0;
 }
 
 static int zram_bvec_rw(struct zram *zram, struct bio_vec *bvec, u32 index,
-			int offset, struct bio *bio, int rw)
+			struct bio *bio, int rw)
 {
-	int ret;
+	if (rw == READ)
+		return zram_bvec_read(zram, bvec, index, bio);
 
-	if (rw == READ) {
-		down_read(&zram->lock);
-		handle_pending_slot_free(zram);
-		ret = zram_bvec_read(zram, bvec, index, offset, bio);
-		up_read(&zram->lock);
-	} else {
-		down_write(&zram->lock);
-		handle_pending_slot_free(zram);
-		ret = zram_bvec_write(zram, bvec, index, offset);
-		up_write(&zram->lock);
-	}
-
-	return ret;
+	return zram_bvec_write(zram, bvec, index);
 }
 
-static void zram_reset_device(struct zram *zram, bool reset_capacity)
+static void __zram_make_request(struct zram *zram, struct bio *bio, int rw)
 {
-	size_t index;
-	struct zram_meta *meta;
+	int i;
+	u32 index;
+	struct bio_vec *bvec;
 
-	flush_work(&zram->free_work);
-
-	down_write(&zram->init_lock);
-	if (!zram->init_done) {
-		up_write(&zram->init_lock);
-		return;
+	switch (rw) {
+	case READ:
+		zram_stat64_inc(zram, &zram->stats.num_reads);
+		break;
+	case WRITE:
+		zram_stat64_inc(zram, &zram->stats.num_writes);
+		break;
 	}
 
-	meta = zram->meta;
-	zram->init_done = 0;
+	index = bio->bi_sector >> SECTORS_PER_PAGE_SHIFT;
 
-	/* Free all pages that are still in this zram device */
-	for (index = 0; index < zram->disksize >> PAGE_SHIFT; index++) {
-		unsigned long handle = meta->table[index].handle;
-		if (!handle)
-			continue;
-
-		zs_free(meta->mem_pool, handle);
+	bio_for_each_segment(bvec, bio, i) {
+		if (zram_bvec_rw(zram, bvec, index, bio, rw) < 0)
+			goto out;
+		index++;
 	}
 
 	zram_meta_free(zram->meta);
@@ -692,10 +685,7 @@ static ssize_t disksize_store(struct device *dev,
 		return -EBUSY;
 	}
 
-	zram->disksize = disksize;
-	set_capacity(zram->disk, zram->disksize >> SECTOR_SHIFT);
-	zram_init_device(zram, meta);
-	up_write(&zram->init_lock);
+	__zram_make_request(zram, bio, bio_data_dir(bio));
 
 	return len;
 }
