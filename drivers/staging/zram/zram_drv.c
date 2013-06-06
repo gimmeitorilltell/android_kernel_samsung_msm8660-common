@@ -678,15 +678,10 @@ static void zram_slot_free_notify(struct block_device *bdev,
 	struct zram_slot_free *free_rq;
 
 	zram = bdev->bd_disk->private_data;
-	atomic64_inc(&zram->stats.notify_free);
-
-	free_rq = kmalloc(sizeof(struct zram_slot_free), GFP_ATOMIC);
-	if (!free_rq)
-		return;
-
-	free_rq->index = index;
-	add_slot_free(zram, free_rq);
-	schedule_work(&zram->free_work);
+	down_write(&zram->lock);
+	zram_free_page(zram, index);
+	up_write(&zram->lock);
+	zram_stat64_inc(zram, &zram->stats.notify_free);
 }
 
 static const struct block_device_operations zram_devops = {
