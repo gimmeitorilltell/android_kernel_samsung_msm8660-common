@@ -93,39 +93,6 @@ static struct zram *zram_devices;
 /* Module params (documentation at end) */
 static unsigned int num_devices = 1;
 
-static ssize_t orig_data_size_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct zram *zram = dev_to_zram(dev);
-
-	return sprintf(buf, "%llu\n",
-		(u64)(zram->stats.pages_stored) << PAGE_SHIFT);
-}
-
-static ssize_t compr_data_size_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct zram *zram = dev_to_zram(dev);
-
-	return sprintf(buf, "%llu\n",
-			(u64)atomic64_read(&zram->stats.compr_size));
-}
-
-static ssize_t mem_used_total_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	u64 val = 0;
-	struct zram *zram = dev_to_zram(dev);
-	struct zram_meta *meta = zram->meta;
-
-	down_read(&zram->init_lock);
-	if (zram->init_done)
-		val = zs_get_total_size_bytes(meta->mem_pool);
-	up_read(&zram->init_lock);
-
-	return sprintf(buf, "%llu\n", val);
-}
-
 static int zram_test_flag(struct zram_meta *meta, u32 index,
 			enum zram_pageflags flag)
 {
@@ -185,8 +152,7 @@ static void zram_free_page(struct zram *zram, size_t index)
 	if (size <= PAGE_SIZE / 2)
 		zram->stats.good_compress--;
 
-	zram_stat64_sub(zram, &zram->stats.compr_size,
-			meta->table[index].size);
+	atomic64_sub(meta->table[index].size, &zram->stats.compr_size);
 	zram->stats.pages_stored--;
 
 	meta->table[index].handle = 0;
@@ -244,7 +210,7 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 	/* Should NEVER happen. Return bio error if it does. */
 	if (unlikely(ret != LZO_E_OK)) {
 		pr_err("Decompression failed! err=%d, page=%u\n", ret, index);
-		zram_stat64_inc(zram, &zram->stats.failed_reads);
+		atomic64_inc(&zram->stats.failed_reads);
 		return ret;
 	}
 
@@ -398,7 +364,7 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 	meta->table[index].size = clen;
 
 	/* Update stats */
-	zram_stat64_add(zram, &zram->stats.compr_size, clen);
+	atomic64_add(clen, &zram->stats.compr_size);
 	zram->stats.pages_stored++;
 	if (clen <= PAGE_SIZE / 2)
 		zram->stats.good_compress++;
@@ -408,7 +374,7 @@ out:
 		kfree(uncmem);
 
 	if (ret)
-		zram_stat64_inc(zram, &zram->stats.failed_writes);
+		atomic64_inc(&zram->stats.failed_writes);
 	return ret;
 }
 
@@ -445,10 +411,10 @@ static void __zram_make_request(struct zram *zram, struct bio *bio, int rw)
 
 	switch (rw) {
 	case READ:
-		zram_stat64_inc(zram, &zram->stats.num_reads);
+		atomic64_inc(&zram->stats.num_reads);
 		break;
 	case WRITE:
-		zram_stat64_inc(zram, &zram->stats.num_writes);
+		atomic64_inc(&zram->stats.num_writes);
 		break;
 	}
 
@@ -538,7 +504,7 @@ static int zram_make_request(struct request_queue *queue, struct bio *bio)
 		goto error;
 
 	if (!valid_io_request(zram, bio)) {
-		zram_stat64_inc(zram, &zram->stats.invalid_io);
+		atomic64_inc(&zram->stats.invalid_io);
 		goto error;
 	}
 
@@ -680,7 +646,7 @@ static void zram_slot_free_notify(struct block_device *bdev,
 	down_write(&zram->lock);
 	zram_free_page(zram, index);
 	up_write(&zram->lock);
-	zram_stat64_inc(zram, &zram->stats.notify_free);
+	atomic64_inc(&zram->stats.notify_free);
 }
 
 static const struct block_device_operations zram_devops = {
@@ -726,7 +692,6 @@ static int create_device(struct zram *zram, int device_id)
 
 	init_rwsem(&zram->lock);
 	init_rwsem(&zram->init_lock);
-	spin_lock_init(&zram->stat64_lock);
 
 	zram->queue = blk_alloc_queue(GFP_KERNEL);
 	if (!zram->queue) {
