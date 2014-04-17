@@ -17,9 +17,7 @@
 #include "adreno_drawctxt.h"
 #include "adreno_ringbuffer.h"
 #include "kgsl_iommu.h"
-#ifdef CONFIG_MSM_OCMEM
 #include <mach/ocmem.h>
-#endif
 
 #define DEVICE_3D_NAME "kgsl-3d"
 #define DEVICE_3D0_NAME "kgsl-3d0"
@@ -55,8 +53,6 @@
 #else
 #define ADRENO_DEFAULT_PWRSCALE_POLICY  NULL
 #endif
-
-void adreno_debugfs_init(struct kgsl_device *device);
 
 #define ADRENO_ISTORE_START 0x5000 /* Istore offset */
 
@@ -113,14 +109,9 @@ struct adreno_device {
 	unsigned int long_ib_ts;
 	unsigned int ft_pf_policy;
 	unsigned int gpulist_index;
-#ifdef CONFIG_MSM_OCMEM
 	struct ocmem_buf *ocmem_hdl;
 	unsigned int ocmem_base;
-#endif
 	unsigned int gpu_cycles;
-	struct kgsl_memdesc on_resume_cmd;
-	unsigned int on_resume_ib[3];
-	bool on_resume_issueib;
 };
 
 #define PERFCOUNTER_FLAG_NONE 0x0
@@ -235,6 +226,8 @@ struct adreno_ft_data {
 	unsigned int replay_for_snapshot;
 };
 
+#define FT_DETECT_REGS_COUNT 12
+
 /* Fault Tolerance policy flags */
 #define  KGSL_FT_DISABLE                  BIT(0)
 #define  KGSL_FT_REPLAY                   BIT(1)
@@ -244,10 +237,10 @@ struct adreno_ft_data {
 #define  KGSL_FT_DEFAULT_POLICY           (KGSL_FT_REPLAY + KGSL_FT_SKIPIB)
 
 /* Pagefault policy flags */
-#define KGSL_FT_PAGEFAULT_INT_ENABLE         0x00000001
-#define KGSL_FT_PAGEFAULT_GPUHALT_ENABLE     0x00000002
-#define KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE   0x00000004
-#define KGSL_FT_PAGEFAULT_LOG_ONE_PER_INT    0x00000008
+#define KGSL_FT_PAGEFAULT_INT_ENABLE         BIT(0)
+#define KGSL_FT_PAGEFAULT_GPUHALT_ENABLE     BIT(1)
+#define KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE   BIT(2)
+#define KGSL_FT_PAGEFAULT_LOG_ONE_PER_INT    BIT(3)
 #define KGSL_FT_PAGEFAULT_DEFAULT_POLICY     (KGSL_FT_PAGEFAULT_INT_ENABLE + \
 					KGSL_FT_PAGEFAULT_GPUHALT_ENABLE)
 
@@ -273,7 +266,6 @@ extern const unsigned int a330_registers[];
 extern const unsigned int a330_registers_count;
 
 extern unsigned int ft_detect_regs[];
-extern const unsigned int ft_detect_regs_count;
 
 
 int adreno_idle(struct kgsl_device *device);
@@ -314,6 +306,9 @@ int adreno_perfcounter_get(struct adreno_device *adreno_dev,
 
 int adreno_perfcounter_put(struct adreno_device *adreno_dev,
 	unsigned int groupid, unsigned int countable);
+
+int adreno_ft_init_sysfs(struct kgsl_device *device);
+void adreno_ft_uninit_sysfs(struct kgsl_device *device);
 
 static inline int adreno_is_a200(struct adreno_device *adreno_dev)
 {
@@ -511,5 +506,11 @@ static inline int adreno_add_idle_cmds(struct adreno_device *adreno_dev,
 
 	return cmds - start;
 }
+
+#ifdef CONFIG_DEBUG_FS
+void adreno_debugfs_init(struct kgsl_device *device);
+#else
+static inline void adreno_debugfs_init(struct kgsl_device *device) { }
+#endif
 
 #endif /*__ADRENO_H */
