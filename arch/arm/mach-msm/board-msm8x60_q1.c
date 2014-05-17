@@ -9924,20 +9924,15 @@ static struct platform_device *surf_devices[] __initdata = {
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 static struct ion_cp_heap_pdata cp_mm_ion_pdata = {
 	.permission_type = IPT_TYPE_MM_CARVEOUT,
-	.align = SZ_64K,
+	.align = PAGE_SIZE,
 	.request_region = request_smi_region,
 	.release_region = release_smi_region,
 	.setup_region = setup_smi_region,
-	.iommu_map_all = 1,
-	.iommu_2x_map_domain = VIDEO_DOMAIN,
 };
 
 static struct ion_cp_heap_pdata cp_mfc_ion_pdata = {
 	.permission_type = IPT_TYPE_MFC_SHAREDMEM,
 	.align = PAGE_SIZE,
-	.request_region = request_smi_region,
-	.release_region = release_smi_region,
-	.setup_region = setup_smi_region,
 };
 
 static struct ion_cp_heap_pdata cp_wb_ion_pdata = {
