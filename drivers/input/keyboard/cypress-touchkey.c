@@ -155,8 +155,7 @@ static u8 firm_version = 0;
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
 int s2w_switch = 0;
-int s2s_switch = 0;
-int s2w_start = 0;
+int s2w_sensitive = 0;
 int s2w_count = 0;
 int s2w_lenient = 0;
 bool scr_suspended = false, exec_count = true;
@@ -598,21 +597,30 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 				}
 				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 				break;
-			case 2:
-				if (s2w_count > 0 && s2w_count < 4){
+			if(!s2w_sensitive){
+				case 2:
 					pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-					s2w_count++;
-				}
-				break;
-			case 3:
-				if (s2w_count > 0 && s2w_count < 4){
+					if (s2w_count == 1) {
+						s2w_count++;
+					} else {
+						s2w_count = 0;
+					}
+					break;
+				case 3:
 					pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-					s2w_count++;
-				}
-				break;
+					if (s2w_count == 2) {
+						s2w_count++;
+					} else {
+						s2w_count = 0;
+					}
+					break;
+			}
 			case 4:
-				if(scr_suspended && s2w_switch){
-					if (s2w_count > 2 || (s2w_lenient && s2w_count)) sweep2wake_pwrtrigger();
+				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
+				if (s2w_count == 3 || (s2w_sensitive && s2w_count >= 1)) {
+					sweep2wake_pwrtrigger();
+					s2w_count = 0;
+				} else {
 					s2w_count = 0;
 				}
 				else if(!scr_suspended && s2s_switch){
