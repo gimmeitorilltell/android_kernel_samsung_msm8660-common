@@ -263,6 +263,7 @@ kgsl_mem_entry_destroy(struct kref *kref)
 	 */
 
 	if (entry->memtype == KGSL_MEM_ENTRY_ION) {
+		ion_unmap_dma(kgsl_ion_client, entry->priv_data);
 		entry->memdesc.sg = NULL;
 	}
 
@@ -2086,12 +2087,12 @@ static int kgsl_setup_ion(struct kgsl_mem_entry *entry,
 {
 	struct ion_handle *handle;
 	struct scatterlist *s;
-	struct sg_table *sg_table;
+	unsigned long flags;
 
 	if (IS_ERR_OR_NULL(kgsl_ion_client))
 		return -ENODEV;
 
-	handle = ion_import_dma_buf(kgsl_ion_client, fd);
+	handle = ion_import_fd(kgsl_ion_client, fd);
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 	else if (!handle)
@@ -2104,9 +2105,7 @@ static int kgsl_setup_ion(struct kgsl_mem_entry *entry,
 	/* USE_CPU_MAP is not impemented for ION. */
 	entry->memdesc.flags &= ~KGSL_MEMFLAGS_USE_CPU_MAP;
 
-	sg_table = ion_sg_table(kgsl_ion_client, handle);
-
-	if (IS_ERR_OR_NULL(sg_table))
+	if (ion_handle_get_flags(kgsl_ion_client, handle, &flags))
 		goto err;
 #else
 	sg_table = ion_sg_table(kgsl_ion_client, handle);
@@ -2117,7 +2116,9 @@ static int kgsl_setup_ion(struct kgsl_mem_entry *entry,
 	entry->memdesc.sg = sg_table->sgl;
 #endif
 
-	entry->memdesc.sg = sg_table->sgl;
+	entry->memdesc.sg = ion_map_dma(kgsl_ion_client, handle, flags);
+	if (IS_ERR_OR_NULL(entry->memdesc.sg))
+		goto err;
 
 	/* Calculate the size of the memdesc from the sglist */
 
@@ -2275,6 +2276,7 @@ error_attach:
 			fput(entry->priv_data);
 		break;
 	case KGSL_MEM_ENTRY_ION:
+		ion_unmap_dma(kgsl_ion_client, entry->priv_data);
 		ion_free(kgsl_ion_client, entry->priv_data);
 		break;
 	default:
