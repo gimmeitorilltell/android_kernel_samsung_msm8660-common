@@ -74,10 +74,11 @@ struct msm_iova_layout {
 
 extern struct iommu_domain *msm_get_iommu_domain(int domain_num);
 
-extern unsigned long msm_allocate_iova_address(unsigned int iommu_domain,
+extern int msm_allocate_iova_address(unsigned int iommu_domain,
 					unsigned int partition_no,
 					unsigned long size,
-					unsigned long align);
+					unsigned long align,
+					unsigned long *iova);
 
 extern void msm_free_iova_address(unsigned long iova,
 			unsigned int iommu_domain,
@@ -132,10 +133,11 @@ static inline struct iommu_domain
 
 
 
-static inline unsigned long msm_allocate_iova_address(unsigned int iommu_domain,
+static inline int msm_allocate_iova_address(unsigned int iommu_domain,
 					unsigned int partition_no,
 					unsigned long size,
-					unsigned long align) { return 0; }
+					unsigned long align,
+					unsigned long *iova) { return -ENOMEM; }
 
 static inline void msm_free_iova_address(unsigned long iova,
 			unsigned int iommu_domain,
