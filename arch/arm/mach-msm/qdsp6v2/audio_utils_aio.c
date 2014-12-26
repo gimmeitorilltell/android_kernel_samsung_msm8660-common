@@ -1,6 +1,6 @@
 /* Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -412,9 +412,8 @@ void audio_aio_reset_ion_region(struct q6audio_aio *audio)
 	list_for_each_safe(ptr, next, &audio->ion_region_queue) {
 		region = list_entry(ptr, struct audio_aio_ion_region, list);
 		list_del(&region->list);
-		ion_unmap_kernel(region->client, region->handle);
-		ion_free(region->client, region->handle);
-		ion_client_destroy(region->client);
+		ion_unmap_kernel(audio->client, region->handle);
+		ion_free(audio->client, region->handle);
 		kfree(region);
 	}
 
@@ -478,8 +477,10 @@ int audio_aio_release(struct inode *inode, struct file *file)
 	audio->drv_ops.out_flush(audio);
 	audio->drv_ops.in_flush(audio);
 	audio_aio_disable(audio);
-        audio_aio_unmap_ion_region(audio);
-        audio_aio_reset_ion_region(audio);
+	if (audio->stopped == 1)
+		audio_aio_unmap_ion_region(audio);
+	audio_aio_reset_ion_region(audio);
+	ion_client_destroy(audio->client);
 	audio->event_abort = 1;
 	wake_up(&audio->event_wait);
 	audio_aio_reset_event_queue(audio);
@@ -695,7 +696,6 @@ static int audio_aio_ion_add(struct q6audio_aio *audio,
 	struct audio_aio_ion_region *region;
 	int rc = -EINVAL;
 	struct ion_handle *handle;
-	struct ion_client *client;
 	unsigned long ionflag;
 	void *temp_ptr;
 
@@ -707,26 +707,26 @@ static int audio_aio_ion_add(struct q6audio_aio *audio,
 		goto end;
 	}
 
-	handle = ion_import_fd(audio->client, info->fd);
+	handle = ion_import_dma_buf(audio->client, info->fd);
 	if (IS_ERR_OR_NULL(handle)) {
 		pr_err("%s: could not get handle of the given fd\n", __func__);
 		goto import_error;
 	}
 
-	rc = ion_handle_get_flags(client, handle, &ionflag);
+	rc = ion_handle_get_flags(audio->client, handle, &ionflag);
 	if (rc) {
 		pr_err("%s: could not get flags for the handle\n", __func__);
 		goto flag_error;
 	}
 
-	temp_ptr = ion_map_kernel(audio->client, handle, ionflag);
+	temp_ptr = ion_map_kernel(audio->client, handle);
 	if (IS_ERR_OR_NULL(temp_ptr)) {
 		pr_err("%s: could not get virtual address\n", __func__);
 		goto map_error;
 	}
 	kvaddr = (unsigned long)temp_ptr;
 
-	rc = ion_phys(client, handle, &paddr, &len);
+	rc = ion_phys(audio->client, handle, &paddr, &len);
 	if (rc) {
 		pr_err("%s: could not get physical address\n", __func__);
 		goto ion_error;
@@ -738,7 +738,6 @@ static int audio_aio_ion_add(struct q6audio_aio *audio,
 		goto ion_error;
 	}
 
-	region->client = client;
 	region->handle = handle;
 	region->vaddr = info->vaddr;
 	region->fd = info->fd;
@@ -760,13 +759,11 @@ static int audio_aio_ion_add(struct q6audio_aio *audio,
 	}
 
 ion_error:
-	ion_unmap_kernel(client, handle);
+	ion_unmap_kernel(audio->client, handle);
 map_error:
-	ion_free(client, handle);
 flag_error:
+	ion_free(audio->client, handle);
 import_error:
-	ion_client_destroy(client);
-client_error:
 	kfree(region);
 end:
 	return rc;
@@ -802,9 +799,8 @@ static int audio_aio_ion_remove(struct q6audio_aio *audio,
 					__func__, audio);
 
 			list_del(&region->list);
-			ion_unmap_kernel(region->client, region->handle);
-			ion_free(region->client, region->handle);
-			ion_client_destroy(region->client);
+			ion_unmap_kernel(audio->client, region->handle);
+			ion_free(audio->client, region->handle);
 			kfree(region);
 			rc = 0;
 			break;
@@ -835,8 +831,15 @@ static void audio_aio_async_write(struct q6audio_aio *audio,
 
 	ac = audio->ac;
 	/* Offset with  appropriate meta */
-	param.paddr = buf_node->paddr + sizeof(struct dec_meta_in);
-	param.len = buf_node->buf.data_len - sizeof(struct dec_meta_in);
+	if (audio->feedback) {
+		/* Non Tunnel mode */
+		param.paddr = buf_node->paddr + sizeof(struct dec_meta_in);
+		param.len = buf_node->buf.data_len - sizeof(struct dec_meta_in);
+	} else {
+		/* Tunnel mode */
+		param.paddr = buf_node->paddr;
+		param.len = buf_node->buf.data_len;
+	}
 	param.msw_ts = buf_node->meta_info.meta_in.ntimestamp.highpart;
 	param.lsw_ts = buf_node->meta_info.meta_in.ntimestamp.lowpart;
 	/* If no meta_info enaled, indicate no time stamp valid */
@@ -1084,12 +1087,18 @@ int audio_aio_open(struct q6audio_aio *audio, struct file *file)
 		else {
 			pr_err("%s[%p]:event pkt alloc failed\n",
 				__func__, audio);
-			rc = -ENOMEM;
-			goto fail;
+			break;
 		}
 	}
+	audio->client = msm_ion_client_create(UINT_MAX, "Audio_Dec_Client");
+	if (IS_ERR_OR_NULL(audio->client)) {
+		pr_err("Unable to create ION client\n");
+		rc = -EACCES;
+		goto fail;
+	}
+	pr_debug("Ion client create in audio_aio_open %p", audio->client);
+	return 0;
 fail:
-
 	return rc;
 }
 
@@ -1101,6 +1110,7 @@ long audio_aio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case AUDIO_GET_STATS: {
 		struct msm_audio_stats stats;
+		memset(&stats, 0, sizeof(struct msm_audio_stats));
 		stats.byte_count = atomic_read(&audio->in_bytes);
 		stats.sample_count = atomic_read(&audio->in_samples);
 		if (copy_to_user((void *)arg, &stats, sizeof(stats)))

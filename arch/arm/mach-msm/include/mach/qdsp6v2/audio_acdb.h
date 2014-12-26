@@ -14,8 +14,11 @@
 #define _AUDIO_ACDB_H
 
 #include <linux/msm_audio_acdb.h>
+#ifdef CONFIG_ARCH_MSM8974
+#include <sound/q6adm-v2.h>
+#else
 #include <sound/q6adm.h>
-
+#endif
 enum {
 	RX_CAL,
 	TX_CAL,
@@ -34,6 +37,10 @@ struct acdb_atomic_cal_block {
 	atomic_t		cal_paddr;
 };
 
+struct hw_delay_entry {
+	uint32_t sample_rate;
+	uint32_t delay_usec;
+};
 struct acdb_cal_data {
 	uint32_t			num_cal_blocks;
 	struct acdb_atomic_cal_block	*cal_blocks;
@@ -58,5 +65,6 @@ void get_vocproc_cal(struct acdb_cal_data *cal_data);
 void get_vocstrm_cal(struct acdb_cal_data *cal_data);
 void get_vocvol_cal(struct acdb_cal_data *cal_data);
 void get_sidetone_cal(struct sidetone_cal *cal_data);
+int get_hw_delay(int32_t path, struct hw_delay_entry *delay_info);
 
 #endif

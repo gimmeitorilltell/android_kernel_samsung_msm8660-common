@@ -16,6 +16,7 @@
  */
 
 #include <linux/msm_audio_aac.h>
+#include <mach/socinfo.h>
 #include "audio_utils_aio.h"
 
 #define AUDIO_AAC_DUAL_MONO_INVALID -1
@@ -100,6 +101,14 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			pr_err("cmd media format block failed\n");
 			break;
 		}
+		if (!cpu_is_msm8x60()) {
+			rc = q6asm_set_encdec_chan_map(audio->ac, 2);
+			if (rc < 0) {
+				pr_err("%s: cmd set encdec_chan_map failed\n",
+					__func__);
+				break;
+			}
+		}
 		rc = audio_aio_enable(audio);
 		audio->eos_rsp = 0;
 		audio->eos_flag = 0;
@@ -168,6 +177,25 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 					pr_err("%s: asm cmd dualmono failed rc=%d\n",
 								 __func__, rc);
 			}			break;
+		}
+		break;
+	}
+	case AUDIO_SET_AAC_MIX_CONFIG:	{
+		pr_debug("%s, AUDIO_SET_AAC_MIX_CONFIG", __func__);
+		if (copy_from_user(audio->codec_cfg, (void *)arg,
+			sizeof(unsigned long))) {
+			rc = -EFAULT;
+			break;
+		} else {
+			unsigned long *mix_coeff =
+				 (unsigned long *)audio->codec_cfg;
+			pr_debug("%s, value of coeff = %lu",
+				 __func__, *mix_coeff);
+			rc = q6asm_cfg_aac_sel_mix_coef(audio->ac, *mix_coeff);
+			if (rc < 0)
+				pr_err("%s asm aac_sel_mix_coef failed rc=%d\n",
+								__func__, rc);
+			break;
 		}
 		break;
 	}
@@ -249,9 +277,8 @@ static int audio_open(struct inode *inode, struct file *file)
 		goto fail;
 	}
 	rc = audio_aio_open(audio, file);
-	if (IS_ERR_OR_NULL(audio)) {
-		pr_err("%s: audio_aio_open failed\n", __func__);
-		rc = -EACCES;
+	if (rc < 0) {
+		pr_err("audio_aio_open rc=%d\n", rc);
 		goto fail;
 	}
 

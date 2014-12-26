@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,7 +23,7 @@
 #include <mach/qdsp6v2/audio_acdb.h>
 #include <mach/qdsp6v2/rtac.h>
 #include "q6audio_common.h"
-#include <sound/q6afe.h>
+#include <sound/q6afe-v2.h>
 
 #ifndef CONFIG_RTAC
 
@@ -353,7 +353,7 @@ void rtac_remove_voice(u32 cvs_handle)
 	return;
 }
 
-static int get_voice_index_cvs(u32 cvs_handle)
+static int get_voice_index(u32 cvs_handle)
 {
 	u32 i;
 
@@ -364,32 +364,6 @@ static int get_voice_index_cvs(u32 cvs_handle)
 
 	pr_err("%s: No voice index for CVS handle %d found returning 0\n",
 	       __func__, cvs_handle);
-	return 0;
-}
-
-static int get_voice_index_cvp(u32 cvp_handle)
-{
-	u32 i;
-
-	for (i = 0; i < rtac_voice_data.num_of_voice_combos; i++) {
-		if (rtac_voice_data.voice[i].cvp_handle == cvp_handle)
-			return i;
-	}
-
-	pr_err("%s: No voice index for CVP handle %d found returning 0\n",
-	       __func__, cvp_handle);
-	return 0;
-}
-
-static int get_voice_index(u32 mode, u32 handle)
-{
-	if (mode == RTAC_CVP)
-		return get_voice_index_cvp(handle);
-	if (mode == RTAC_CVS)
-		return get_voice_index_cvs(handle);
-
-	pr_err("%s: Invalid mode %d, returning 0\n",
-	       __func__, mode);
 	return 0;
 }
 
@@ -426,8 +400,8 @@ void rtac_copy_adm_payload_to_user(void *payload, u32 payload_size)
 	memcpy(rtac_adm_buffer, &payload_size, sizeof(u32));
 	if (payload_size != 0) {
 		if (payload_size > rtac_adm_user_buf_size) {
-			pr_err("%s: Buffer set not big enough for returned data, buf size = %d,ret data = %d\n",
-				__func__, rtac_adm_user_buf_size, payload_size);
+			pr_err("%s: Buffer set not big enough for returned data, buf size = %d, ret data = %d\n",
+			 __func__, rtac_adm_user_buf_size, payload_size);
 			goto done;
 		}
 		memcpy(rtac_adm_buffer + sizeof(u32), payload, payload_size);
@@ -525,7 +499,7 @@ u32 send_adm_apr(void *buf, u32 opcode)
 		__func__, adm_params.pkt_size);
 
 	result = apr_send_pkt(rtac_adm_apr_data.apr_handle,
-				(uint32_t *)rtac_adm_buffer);
+		(uint32_t *)rtac_adm_buffer);
 	if (result < 0) {
 		pr_err("%s: Set params failed port = %d, copp = %d\n",
 			__func__, port_index, copp_id);
@@ -545,14 +519,14 @@ u32 send_adm_apr(void *buf, u32 opcode)
 	if (rtac_adm_payload_size != 0) {
 		if (copy_to_user(buf, rtac_adm_buffer,
 			rtac_adm_payload_size + sizeof(u32))) {
-			pr_err("%s: Could not copy buffer to user, size = %d\n",
-				 __func__, payload_size);
+			pr_err("%s: Could not copy buffer to user,size = %d\n",
+				__func__, payload_size);
 			goto done;
 		}
 	}
 
 	/* Return data written for SET & data read for GET */
-	if (opcode == ADM_CMD_GET_PARAMS)
+	if (opcode == ADM_CMD_GET_PP_PARAMS_V5)
 		bytes_returned = rtac_adm_payload_size;
 	else
 		bytes_returned = payload_size;
@@ -613,7 +587,7 @@ u32 send_rtac_asm_apr(void *buf, u32 opcode)
 	u32	bytes_returned = 0;
 	u32	session_id = 0;
 	u32	payload_size;
-	struct apr_hdr	asm_params;
+	struct apr_hdr		asm_params;
 	pr_debug("%s\n", __func__);
 
 	if (copy_from_user(&count, (void *)buf, sizeof(count))) {
@@ -663,7 +637,7 @@ u32 send_rtac_asm_apr(void *buf, u32 opcode)
 
 	/* Copy buffer to in-band payload */
 	if (copy_from_user(rtac_asm_buffer + sizeof(asm_params),
-		buf + 3 * sizeof(u32), payload_size)) {
+			buf + 3 * sizeof(u32), payload_size)) {
 		pr_err("%s: Could not copy payload from user buffer\n",
 			__func__);
 		goto err;
@@ -719,7 +693,7 @@ u32 send_rtac_asm_apr(void *buf, u32 opcode)
 	}
 
 	/* Return data written for SET & data read for GET */
-	if (opcode == ASM_STREAM_CMD_GET_PP_PARAMS)
+	if (opcode == ASM_STREAM_CMD_GET_PP_PARAMS_V2)
 		bytes_returned = rtac_asm_payload_size;
 	else
 		bytes_returned = payload_size;
@@ -735,6 +709,7 @@ err:
 void rtac_set_voice_handle(u32 mode, void *handle)
 {
 	pr_debug("%s\n", __func__);
+
 	mutex_lock(&rtac_voice_apr_mutex);
 	rtac_voice_apr_data[mode].apr_handle = handle;
 	mutex_unlock(&rtac_voice_apr_mutex);
@@ -778,8 +753,8 @@ u32 send_voice_apr(u32 mode, void *buf, u32 opcode)
 	u32	count = 0;
 	u32	bytes_returned = 0;
 	u32	payload_size;
-	u32	dest_port;
-	struct	apr_hdr	voice_params;
+	u16	dest_port;
+	struct apr_hdr		voice_params;
 	pr_debug("%s\n", __func__);
 
 	if (copy_from_user(&count, (void *)buf, sizeof(count))) {
@@ -794,8 +769,7 @@ u32 send_voice_apr(u32 mode, void *buf, u32 opcode)
 		goto done;
 	}
 
-	if (copy_from_user(&payload_size, buf + sizeof(payload_size),
-						sizeof(payload_size))) {
+	if (copy_from_user(&payload_size, buf + sizeof(u32), sizeof(u32))) {
 		pr_err("%s: Could not copy payload size from user buffer\n",
 			__func__);
 		goto done;
@@ -803,12 +777,11 @@ u32 send_voice_apr(u32 mode, void *buf, u32 opcode)
 
 	if (payload_size > MAX_PAYLOAD_SIZE) {
 		pr_err("%s: Invalid payload size = %d\n",
-			__func__, payload_size);
+				__func__, payload_size);
 		goto done;
 	}
 
-	if (copy_from_user(&dest_port, buf + 2 * sizeof(dest_port),
-						sizeof(dest_port))) {
+	if (copy_from_user(&dest_port, buf + 2 * sizeof(u32), sizeof(u32))) {
 		pr_err("%s: Could not copy port id from user buffer\n",
 			__func__);
 		goto done;
@@ -831,7 +804,7 @@ u32 send_voice_apr(u32 mode, void *buf, u32 opcode)
 
 	/* Copy buffer to in-band payload */
 	if (copy_from_user(rtac_voice_buffer + sizeof(voice_params),
-		buf + 3 * sizeof(u32), payload_size)) {
+			buf + 3 * sizeof(u32), payload_size)) {
 		pr_err("%s: Could not copy payload from user buffer\n",
 			__func__);
 		goto err;
@@ -845,10 +818,10 @@ u32 send_voice_apr(u32 mode, void *buf, u32 opcode)
 	voice_params.src_svc = 0;
 	voice_params.src_domain = APR_DOMAIN_APPS;
 	voice_params.src_port = voice_session_id[
-					get_voice_index(mode, dest_port)];
+					get_voice_index(dest_port)];
 	voice_params.dest_svc = 0;
 	voice_params.dest_domain = APR_DOMAIN_MODEM;
-	voice_params.dest_port = (u16)dest_port;
+	voice_params.dest_port = dest_port;
 	voice_params.token = 0;
 	voice_params.opcode = opcode;
 
@@ -878,9 +851,9 @@ u32 send_voice_apr(u32 mode, void *buf, u32 opcode)
 
 	if (rtac_voice_payload_size != 0) {
 		if (copy_to_user(buf, rtac_voice_buffer,
-				rtac_voice_payload_size + sizeof(u32))) {
-			pr_err("%s: Could not copy buffer to user,size = %d\n",
-						 __func__, payload_size);
+			rtac_voice_payload_size + sizeof(u32))) {
+			pr_err("%s: Could not copy buffer to user, size = %d\n",
+				 __func__, payload_size);
 			goto done;
 		}
 	}
@@ -927,18 +900,18 @@ static long rtac_ioctl(struct file *f,
 			result = sizeof(rtac_voice_data);
 		break;
 	case AUDIO_GET_RTAC_ADM_CAL:
-		result = send_adm_apr((void *)arg, ADM_CMD_GET_PARAMS);
+		result = send_adm_apr((void *)arg, ADM_CMD_GET_PP_PARAMS_V5);
 		break;
 	case AUDIO_SET_RTAC_ADM_CAL:
-		result = send_adm_apr((void *)arg, ADM_CMD_SET_PARAMS);
+		result = send_adm_apr((void *)arg, ADM_CMD_SET_PP_PARAMS_V5);
 		break;
 	case AUDIO_GET_RTAC_ASM_CAL:
 		result = send_rtac_asm_apr((void *)arg,
-			ASM_STREAM_CMD_GET_PP_PARAMS);
+			ASM_STREAM_CMD_GET_PP_PARAMS_V2);
 		break;
 	case AUDIO_SET_RTAC_ASM_CAL:
 		result = send_rtac_asm_apr((void *)arg,
-			ASM_STREAM_CMD_SET_PP_PARAMS);
+			ASM_STREAM_CMD_SET_PP_PARAMS_V2);
 		break;
 	case AUDIO_GET_RTAC_CVS_CAL:
 		result = send_voice_apr(RTAC_CVS, (void *)arg,
