@@ -155,6 +155,7 @@ static u8 firm_version = 0;
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
 int s2w_switch = 0;
+int s2s_switch = 0;
 int s2w_start = 0;
 int s2w_count = 0;
 int s2w_lenient = 0;
@@ -599,7 +600,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
 		if(s2w_count && ((jiffies_to_msecs(jiffies) - s2w_start) > 1500)) s2w_count = 0; //timeout after 1.5 seconds
-		if (!touch_is_pressed && s2w_switch) {
+		if (!touch_is_pressed && (s2w_switch || s2s_switch)) {
 			int key = data[0] & KEYCODE_BIT;
 			switch (key) {
 			case 1:
@@ -607,6 +608,11 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 					s2w_count = 1;
 					s2w_start = jiffies_to_msecs(jiffies);
 				}
+				else if(!scr_suspended && s2s_switch){
+					if (s2w_count > 2 || (s2w_lenient && s2w_count)) sweep2wake_pwrtrigger();
+					s2w_count = 0;
+				}
+				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 				break;
 			case 2:
 				if (s2w_count > 0 && s2w_count < 4){
@@ -624,6 +630,10 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 				if(scr_suspended && s2w_switch){
 					if (s2w_count > 2 || (s2w_lenient && s2w_count)) sweep2wake_pwrtrigger();
 					s2w_count = 0;
+				}
+				else if(!scr_suspended && s2s_switch){
+					s2w_count = 1;
+					s2w_start = jiffies_to_msecs(jiffies);
 				}
 				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 				break;
