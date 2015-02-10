@@ -4,6 +4,7 @@
  * Copyright 2005 Phil Blundell
  * Copyright 2011 Michael Richter (alias neldar)
  * Copyright 2012 Jeffrey Clark <h0tw1r3@gmail.com>
+ * Copyright 2015 Emmanuel Utomi <emmanuelutomi@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -620,7 +621,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 				break;
 			case 4:
 				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-				if (s2w_count == 3) {
+				if (s2w_count == 3 || (s2w_lenient && s2w_count > 0)) {
 					sweep2wake_pwrtrigger();
 					s2w_count = 0;
 				} else {
