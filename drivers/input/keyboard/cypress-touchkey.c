@@ -441,7 +441,7 @@ void touchkey_resume_func(struct work_struct *p)
 //	int rc = 0;
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch > 0) {
+	if (s2w_switch) {
 		disable_irq_wake(IRQ_TOUCHKEY_INT);		
 	} else {
 #endif
@@ -598,26 +598,34 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 	#endif
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-		if((s2w_count > 0) && ((jiffies_to_msecs(jiffies) - s2w_start) > 1500)) s2w_count = 0; //timeout after 1.5 seconds
-		if ((!touch_is_pressed) && (scr_suspended == true) && (s2w_switch > 0)) {
+		if(s2w_count && ((jiffies_to_msecs(jiffies) - s2w_start) > 1500)) s2w_count = 0; //timeout after 1.5 seconds
+		if (!touch_is_pressed && s2w_switch) {
 			int key = data[0] & KEYCODE_BIT;
 			switch (key) {
 			case 1:
-				s2w_count = 1;
-				s2w_start = jiffies_to_msecs(jiffies);
+				if(scr_suspended && s2w_switch){
+					s2w_count = 1;
+					s2w_start = jiffies_to_msecs(jiffies);
+				}
 				break;
 			case 2:
-				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-				if (s2w_count == 1) s2w_count++;
+				if (s2w_count > 0 && s2w_count < 4){
+					pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
+					s2w_count++;
+				}
 				break;
 			case 3:
-				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-				if (s2w_count == 2) s2w_count++;
+				if (s2w_count > 0 && s2w_count < 4){
+					pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
+					s2w_count++;
+				}
 				break;
 			case 4:
+				if(scr_suspended && s2w_switch){
+					if (s2w_count > 2 || (s2w_lenient && s2w_count)) sweep2wake_pwrtrigger();
+					s2w_count = 0;
+				}
 				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
-				if (s2w_count == 3 || (s2w_lenient && s2w_count > 0)) sweep2wake_pwrtrigger();
-				s2w_count = 0;
 				break;
 			}
 		}
@@ -737,7 +745,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
     printk(KERN_DEBUG "sec_touchkey_early_suspend\n");
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch > 0) {
+	if (s2w_switch) {
 		scr_suspended = true;
 		enable_irq_wake(IRQ_TOUCHKEY_INT);
 	} else {
@@ -861,7 +869,7 @@ static void sec_touchkey_early_resume(struct early_suspend *h)
 	}
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch > 0) {
+	if (s2w_switch) {
 		scr_suspended = false;
 	}
 #endif
@@ -1020,7 +1028,7 @@ if(touchled_cmd_reversed) {
 	|| defined (CONFIG_USA_MODEL_SGH_T769)|| defined(CONFIG_USA_MODEL_SGH_I577)|| defined(CONFIG_CAN_MODEL_SGH_I577R)\
 	|| defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch > 0) {
+	if (s2w_switch) {
 		disable_irq_wake(IRQ_TOUCHKEY_INT);
 	} else {
 #endif
