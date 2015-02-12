@@ -243,6 +243,7 @@ struct audio_dev {
 
 	struct list_head		idle_reqs;
 	struct usb_ep			*in_ep;
+	struct usb_endpoint_descriptor	*in_desc;
 
 	spinlock_t			lock;
 

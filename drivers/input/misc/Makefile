@@ -54,7 +54,3 @@ obj-$(CONFIG_BOSCH_BMA150)              += bma150.o
 obj-$(CONFIG_INPUT_BMP180)              += bmp180.o
 obj-$(CONFIG_ENHANCED_BLN)		+= enhanced_bln.o
 
-#debug setting
-ifeq ($(CONFIG_SENSORS_CORE),y)
-EXTRA_CFLAGS += -DSENSORS_LOG_DUMP
-endif

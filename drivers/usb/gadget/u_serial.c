@@ -1315,7 +1315,7 @@ static void usb_debugfs_init(struct gs_port *ui_dev, int port_num)
 	debugfs_create_file("reset", S_IRUGO | S_IWUSR, dent, ui_dev, &debug_rst_ops);
 }
 #else
-static void usb_debugfs_init(struct gs_port *ui_dev) {}
+static void usb_debugfs_init(struct gs_port *ui_dev, int port_num) {}
 #endif
 
 /**
