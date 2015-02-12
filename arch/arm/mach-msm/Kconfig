@@ -2433,8 +2433,6 @@ config MSM_CPU_PWRCTL
 	  stand alone power collapse operation. Selecting this option
 	  ensures that they are always off.
 
-endif
-
 config PMIC8058_XOADC_CAL
 	bool "PMIC8058 adc calibration"
 	help
