@@ -763,15 +763,10 @@ int avc_has_perm_noaudit(u32 ssid, u32 tsid,
 	rcu_read_lock();
 
 	node = avc_lookup(ssid, tsid, tclass);
-	if (unlikely(!node)) {
-		rcu_read_unlock();
-		security_compute_av(ssid, tsid, tclass, avd);
-		rcu_read_lock();
-		node = avc_insert(ssid, tsid, tclass, avd);
-	} else {
+	if (unlikely(!node))
+		node = avc_compute_av(ssid, tsid, tclass, avd);
+	else
 		memcpy(avd, &node->ae.avd, sizeof(*avd));
-		avd = &node->ae.avd;
-	}
 
 	denied = requested & ~(avd->allowed);
 
