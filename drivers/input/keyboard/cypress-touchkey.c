@@ -466,11 +466,12 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
     int ret;
     int retry = 10;
 
+    mutex_lock(&touchkey_driver->mutex);
+
     if (!atomic_read(&touchkey_driver->keypad_enable)) {
+            mutex_unlock(&touchkey_driver->mutex);
             return IRQ_HANDLED;
     }
-
-    mutex_lock(&touchkey_driver->mutex);
 
     set_touchkey_debug('I');
     disable_irq_nosync(IRQ_TOUCHKEY_INT);
@@ -860,8 +861,6 @@ static void sec_touchkey_early_resume(struct early_suspend *h)
 		printk("[TKEY] %s touchkey_enable: %d\n", __FUNCTION__, touchkey_enable);
 		return;
 	}
-
-	mutex_lock(&touchkey_driver->mutex);
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
 	if (s2w_switch) {
@@ -2139,6 +2138,8 @@ static ssize_t sec_keypad_enable_store(struct device *dev,
 		return count;
 	}
 
+	mutex_lock(&touchkey_driver->mutex);
+
 	sscanf(buf, "%d", &val);
 	val = (val == 0 ? 0 : 1);
 	atomic_set(&touchkey_driver->keypad_enable, val);
@@ -2150,6 +2151,8 @@ static ssize_t sec_keypad_enable_store(struct device *dev,
                         clear_bit(touchkey_keycode[i], touchkey_driver->input_dev->keybit);
 	}
 	input_sync(touchkey_driver->input_dev);
+
+	mutex_unlock(&touchkey_driver->mutex);
 
 	return count;
 }
