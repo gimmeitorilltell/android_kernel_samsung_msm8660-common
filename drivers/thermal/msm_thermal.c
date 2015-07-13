@@ -29,6 +29,8 @@
 #include "../../arch/arm/mach-msm/msm_mpdecision.h"
 #endif
 
+#define THERMAL_TAG				"msm_thermal: "
+
 static DEFINE_MUTEX(emergency_shutdown_mutex);
 
 static int enabled;
@@ -137,7 +139,7 @@ static int update_cpu_max_freq(struct cpufreq_policy *cpu_policy,
 
     ret = cpufreq_update_policy(cpu);
     if (!ret)
-        pr_debug("msm_thermal: Setting CPU%d max frequency to %d\n",
+        pr_debug(THERMAL_TAG"Setting CPU%d max frequency to %d\n",
                  cpu, max_freq);
     return ret;
 }
@@ -156,7 +158,7 @@ static int update_cpu_min_freq(struct cpufreq_policy *cpu_policy,
 
     ret = cpufreq_update_policy(cpu);
     if (!ret) {
-        pr_debug("msm_thermal: Setting CPU%d min frequency to %d\n",
+        pr_debug(THERMAL_TAG"Setting CPU%d min frequency to %d\n",
             cpu, new_freq);
     }
     return ret;
@@ -176,7 +178,7 @@ static void check_temp(struct work_struct *work)
     tsens_dev.sensor_num = msm_thermal_tuners_ins.sensor_id;
     ret = tsens_get_temp(&tsens_dev, &temp);
     if (ret) {
-        pr_err("msm_thermal: FATAL: Unable to read TSENS sensor %d\n",
+        pr_err(THERMAL_TAG"FATAL: Unable to read TSENS sensor %d\n",
                tsens_dev.sensor_num);
         goto reschedule;
     }
@@ -196,7 +198,7 @@ static void check_temp(struct work_struct *work)
             update_policy = true;
             max_freq = msm_thermal_tuners_ins.allowed_max_freq;
             bricked_thermal_throttled = 3;
-            pr_warn("msm_thermal: Emergency throttled CPU%i to %u! temp:%lu\n",
+            pr_warn(THERMAL_TAG"Emergency throttled CPU%i to %u! temp:%lu\n",
                     cpu, msm_thermal_tuners_ins.allowed_max_freq, temp);
         }
         mutex_unlock(&emergency_shutdown_mutex);
@@ -206,7 +208,7 @@ static void check_temp(struct work_struct *work)
         update_policy = false;
         cpu_policy = cpufreq_cpu_get(cpu);
         if (!cpu_policy) {
-            pr_debug("msm_thermal: NULL policy on cpu %d\n", cpu);
+            pr_debug(THERMAL_TAG"NULL policy on cpu %d\n", cpu);
             continue;
         }
 
@@ -222,7 +224,7 @@ static void check_temp(struct work_struct *work)
             max_freq = msm_thermal_tuners_ins.allowed_low_freq;
             if (cpu == (CONFIG_NR_CPUS-1)) {
                 bricked_thermal_throttled = 1;
-                pr_warn("msm_thermal: Thermal Throttled (low)! temp:%lu by:%u\n",
+                pr_warn(THERMAL_TAG"Thermal Throttled (low)! temp:%lu by:%u\n",
                         temp, msm_thermal_tuners_ins.sensor_id);
             }
         //low clr point
@@ -232,7 +234,7 @@ static void check_temp(struct work_struct *work)
                 max_freq = pre_throttled_max;
             else {
                 max_freq = CONFIG_MSM_CPU_FREQ_MAX;
-                pr_warn("msm_thermal: ERROR! pre_throttled_max=0, falling back to %u\n", max_freq);
+                pr_warn(THERMAL_TAG"ERROR! pre_throttled_max=0, falling back to %u\n", max_freq);
             }
             update_policy = true;
             for (i = 1; i < CONFIG_NR_CPUS; i++) {
@@ -242,7 +244,7 @@ static void check_temp(struct work_struct *work)
             }
             if (cpu == (CONFIG_NR_CPUS-1)) {
                 bricked_thermal_throttled = 0;
-                pr_warn("msm_thermal: Low thermal throttle ended! temp:%lu by:%u\n",
+                pr_warn(THERMAL_TAG"Low thermal throttle ended! temp:%lu by:%u\n",
                         temp, msm_thermal_tuners_ins.sensor_id);
             }
 
@@ -264,7 +266,7 @@ static void check_temp(struct work_struct *work)
             max_freq = msm_thermal_tuners_ins.allowed_mid_freq;
             if (cpu == (CONFIG_NR_CPUS-1)) {
                 bricked_thermal_throttled = 2;
-                pr_warn("msm_thermal: Thermal Throttled (mid)! temp:%lu by:%u\n",
+                pr_warn(THERMAL_TAG"Thermal Throttled (mid)! temp:%lu by:%u\n",
                         temp, msm_thermal_tuners_ins.sensor_id);
             }
         //mid clr point
@@ -274,7 +276,7 @@ static void check_temp(struct work_struct *work)
             update_policy = true;
             if (cpu == (CONFIG_NR_CPUS-1)) {
                 bricked_thermal_throttled = 1;
-                pr_warn("msm_thermal: Mid thermal throttle ended! temp:%lu by:%u\n",
+                pr_warn(THERMAL_TAG"Mid thermal throttle ended! temp:%lu by:%u\n",
                         temp, msm_thermal_tuners_ins.sensor_id);
             }
         //max trip point
@@ -283,7 +285,7 @@ static void check_temp(struct work_struct *work)
             max_freq = msm_thermal_tuners_ins.allowed_max_freq;
             if (cpu == (CONFIG_NR_CPUS-1)) {
                 bricked_thermal_throttled = 3;
-                pr_warn("msm_thermal: Thermal Throttled (max)! temp:%lu by:%u\n",
+                pr_warn(THERMAL_TAG"Thermal Throttled (max)! temp:%lu by:%u\n",
                         temp, msm_thermal_tuners_ins.sensor_id);
             }
         //max clr point
@@ -293,7 +295,7 @@ static void check_temp(struct work_struct *work)
             update_policy = true;
             if (cpu == (CONFIG_NR_CPUS-1)) {
                 bricked_thermal_throttled = 2;
-                pr_warn("msm_thermal: Max thermal throttle ended! temp:%lu by:%u\n",
+                pr_warn(THERMAL_TAG"Max thermal throttle ended! temp:%lu by:%u\n",
                         temp, msm_thermal_tuners_ins.sensor_id);
             }
         }
@@ -334,7 +336,7 @@ static void disable_msm_thermal(void)
         }
     }
 
-   pr_warn("msm_thermal: Warning! Thermal guard disabled!");
+   pr_warn(THERMAL_TAG"Warning! Thermal guard disabled!");
 }
 
 static void enable_msm_thermal(void)
@@ -344,7 +346,7 @@ static void enable_msm_thermal(void)
     queue_delayed_work(check_temp_workq, &check_temp_work,
                        msecs_to_jiffies(msm_thermal_tuners_ins.poll_ms));
 
-    pr_info("msm_thermal: Thermal guard enabled.");
+    pr_info(THERMAL_TAG"Thermal guard enabled.");
 }
 
 static int set_enabled(const char *val, const struct kernel_param *kp)
@@ -357,9 +359,9 @@ static int set_enabled(const char *val, const struct kernel_param *kp)
     else if (enabled == 1)
         enable_msm_thermal();
     else
-        pr_info("msm_thermal: no action for enabled = %d\n", enabled);
+        pr_info(THERMAL_TAG"no action for enabled = %d\n", enabled);
 
-    pr_info("msm_thermal: enabled = %d\n", enabled);
+    pr_info(THERMAL_TAG"enabled = %d\n", enabled);
 
     return ret;
 }
@@ -651,15 +653,15 @@ int __init msm_thermal_init(void)
     if (msm_thermal_kobject) {
         rc = sysfs_create_group(msm_thermal_kobject, &msm_thermal_attr_group);
         if (rc) {
-            pr_warn("msm_thermal: sysfs: ERROR, could not create sysfs group");
+            pr_warn(THERMAL_TAG"sysfs: ERROR, could not create sysfs group");
         }
         rc = sysfs_create_group(msm_thermal_kobject,
                                 &msm_thermal_stats_attr_group);
         if (rc) {
-            pr_warn("msm_thermal: sysfs: ERROR, could not create sysfs stats group");
+            pr_warn(THERMAL_TAG"sysfs: ERROR, could not create sysfs stats group");
         }
     } else
-        pr_warn("msm_thermal: sysfs: ERROR, could not create sysfs kobj");
+        pr_warn(THERMAL_TAG"sysfs: ERROR, could not create sysfs kobj");
 
     pr_info("%s complete.", __func__);
 
