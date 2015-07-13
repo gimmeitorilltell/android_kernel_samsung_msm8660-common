@@ -76,7 +76,7 @@ static struct msm_mpdec_tuners {
 #ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
 	bool boost_enabled;
 	unsigned int boost_time;
-	unsigned long int boost_freq[4];
+	unsigned long int boost_freq[2];
 #endif
 } msm_mpdec_tuners_ins = {
 	.startdelay = MSM_MPDEC_STARTDELAY,
@@ -91,9 +91,7 @@ static struct msm_mpdec_tuners {
 	.boost_time = MSM_MPDEC_BOOSTTIME,
 	.boost_freq = {
 		MSM_MPDEC_BOOSTFREQ_CPU0,
-		MSM_MPDEC_BOOSTFREQ_CPU1,
-		MSM_MPDEC_BOOSTFREQ_CPU2,
-		MSM_MPDEC_BOOSTFREQ_CPU3
+		MSM_MPDEC_BOOSTFREQ_CPU1
 	},
 #endif
 };
@@ -167,8 +165,8 @@ static void mpdec_cpu_up(int cpu) {
 		per_cpu(msm_mpdec_cpudata, cpu).on_time = ktime_to_ms(ktime_get());
 		per_cpu(msm_mpdec_cpudata, cpu).online = true;
 		per_cpu(msm_mpdec_cpudata, cpu).times_cpu_hotplugged += 1;
-		pr_info(MPDEC_TAG"CPU[%d] off->on | Mask=[%d%d%d%d]\n",
-			cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
+		pr_info(MPDEC_TAG"CPU[%d] off->on | Mask=[%d%d]\n",
+			cpu, cpu_online(0), cpu_online(1));
 		mutex_unlock(&per_cpu(msm_mpdec_cpudata, cpu).hotplug_mutex);
 	}
 }
@@ -183,8 +181,8 @@ static void mpdec_cpu_down(int cpu) {
 		per_cpu(msm_mpdec_cpudata, cpu).online = false;
 		per_cpu(msm_mpdec_cpudata, cpu).on_time_total += on_time;
 		per_cpu(msm_mpdec_cpudata, cpu).times_cpu_unplugged += 1;
-		pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d%d%d] | time online: %llu\n",
-			cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3), on_time);
+		pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d] | time online: %llu\n",
+			cpu, cpu_online(0), cpu_online(1), on_time);
 		mutex_unlock(&per_cpu(msm_mpdec_cpudata, cpu).hotplug_mutex);
 	}
 }
@@ -246,8 +244,8 @@ static int mp_decision(void) {
 
 	last_time = ktime_to_ms(ktime_get());
 #if DEBUG
-	pr_info(MPDEC_TAG"[DEBUG] rq: %u, new_state: %i | Mask=[%d%d%d%d]\n",
-			rq_depth, new_state, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
+	pr_info(MPDEC_TAG"[DEBUG] rq: %u, new_state: %i | Mask=[%d%d]\n",
+			rq_depth, new_state, cpu_online(0), cpu_online(1));
 #endif
 	return new_state;
 }
@@ -604,8 +602,8 @@ static void msm_mpdec_resume(struct work_struct * msm_mpdec_suspend_work) {
 					mpdec_cpu_down(cpu);
 			}
 		}
-		pr_info(MPDEC_TAG"Screen -> on. Activated mpdecision. | Mask=[%d%d%d%d]\n",
-				cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
+		pr_info(MPDEC_TAG"Screen -> on. Activated mpdecision. | Mask=[%d%d]\n",
+				cpu_online(0), cpu_online(1));
 	} else {
 		pr_info(MPDEC_TAG"Screen -> on\n");
 	}
