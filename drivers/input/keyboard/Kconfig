@@ -607,7 +607,7 @@ config KEYPAD_CYPRESS_TOUCH
 	  module will be called melfas-touchkey.
 
 config TOUCH_CYPRESS_SWEEP2WAKE
-	tristate "Sweep2Wake for Cypress based keypad"
+	bool "Sweep2Wake for Cypress based keypad"
 	depends on KEYPAD_CYPRESS_TOUCH
 	default n
 	help
