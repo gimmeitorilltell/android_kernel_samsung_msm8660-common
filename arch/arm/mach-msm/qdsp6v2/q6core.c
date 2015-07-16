@@ -42,6 +42,7 @@ static wait_queue_head_t bus_bw_req_wait;
 static u32 bus_bw_resp_received;
 
 static struct dentry *dentry;
+#endif
 static char l_buf[4096];
 
 static int32_t aprv2_core_fn_q(struct apr_client_data *data, void *priv)
