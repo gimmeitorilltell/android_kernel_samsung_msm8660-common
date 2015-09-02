@@ -24,7 +24,7 @@
 #include <asm-generic/cputime.h>
 #include <linux/mutex.h>
 
-#define MPDEC_TAG				"[MPDEC]: "
+#define MPDEC_TAG				"msm_mpdecision: "
 #define MSM_MPDEC_STARTDELAY			20000
 #define MSM_MPDEC_DELAY				130
 #define MSM_MPDEC_PAUSE				10000
