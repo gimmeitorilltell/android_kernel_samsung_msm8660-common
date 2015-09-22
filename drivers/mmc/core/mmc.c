@@ -546,13 +546,13 @@ static const struct mmc_fixup mmc_fixups[] = {
 	 * matter, so include all possible dates in min and max fields.
 	 */
 	MMC_FIXUP_REV("VYL00M", 0x15, CID_OEMID_ANY,
-		      cid_rev(0, 0x25, 1997, 1), cid_rev(0, 0x25, 2012, 12),
+		      cid_rev(0, 0x25, 1997, 1), cid_rev(0, 0x25, 2015, 12),
 		      add_quirk_mmc, MMC_QUIRK_SAMSUNG_WL_PATCH),
 	MMC_FIXUP_REV("KYL00M", 0x15, CID_OEMID_ANY,
-		      cid_rev(0, 0x25, 1997, 1), cid_rev(0, 0x25, 2012, 12),
+		      cid_rev(0, 0x25, 1997, 1), cid_rev(0, 0x25, 2015, 12),
 		      add_quirk_mmc, MMC_QUIRK_SAMSUNG_WL_PATCH),
 	MMC_FIXUP_REV("MAG4FA", 0x15, CID_OEMID_ANY,
-		      cid_rev(0, 0x25, 1997, 1), cid_rev(0, 0x25, 2012, 12),
+		      cid_rev(0, 0x25, 1997, 1), cid_rev(0, 0x25, 2015, 12),
 		      add_quirk_mmc, MMC_QUIRK_SAMSUNG_WL_PATCH),
 	END_FIXUP
 };
