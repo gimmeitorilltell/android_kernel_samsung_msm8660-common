@@ -47,6 +47,9 @@
  *  - FUSE_IOCTL_UNRESTRICTED shall now return with array of 'struct
  *    fuse_ioctl_iovec' instead of ambiguous 'struct iovec'
  *  - add FUSE_IOCTL_32BIT flag
+ *
+ * 7.17
+ *   - add FUSE_NOTIFY_DELETE
  */
 
 #ifndef _LINUX_FUSE_H
@@ -276,6 +279,7 @@ enum fuse_notify_code {
 	FUSE_NOTIFY_INVAL_ENTRY = 3,
 	FUSE_NOTIFY_STORE = 4,
 	FUSE_NOTIFY_RETRIEVE = 5,
+	FUSE_NOTIFY_DELETE = 6,
 	FUSE_NOTIFY_CODE_MAX,
 };
 
@@ -595,6 +599,13 @@ struct fuse_notify_inval_inode_out {
 
 struct fuse_notify_inval_entry_out {
 	__u64	parent;
+	__u32	namelen;
+	__u32	padding;
+};
+
+struct fuse_notify_delete_out {
+	__u64	parent;
+	__u64	child;
 	__u32	namelen;
 	__u32	padding;
 };
