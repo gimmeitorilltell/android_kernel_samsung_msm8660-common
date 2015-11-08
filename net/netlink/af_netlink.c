@@ -1710,7 +1710,6 @@ static int netlink_dump(struct sock *sk)
 
 	skb = sock_rmalloc(sk, alloc_size, 0, GFP_KERNEL);
 	if (!skb)
-
 		goto errout_skb;
 
 	len = cb->dump(skb, cb);
