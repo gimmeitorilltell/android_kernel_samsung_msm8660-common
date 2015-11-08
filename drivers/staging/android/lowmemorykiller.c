@@ -30,19 +30,28 @@
  *
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/oom.h>
 #include <linux/sched.h>
-#include <linux/swap.h>
 #include <linux/rcupdate.h>
 #include <linux/notifier.h>
-#include <linux/compaction.h>
+#include <linux/memory.h>
+#include <linux/memory_hotplug.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
 #include <linux/swap.h>
+#include <linux/compaction.h>
 #include <linux/fs.h>
+
+#ifdef CONFIG_HIGHMEM
+#define _ZONE ZONE_HIGHMEM
+#else
+#define _ZONE ZONE_NORMAL
+#endif
 
 static uint32_t lowmem_debug_level = 1;
 static int lowmem_adj[6] = {
@@ -61,17 +70,40 @@ static int lowmem_minfree[6] = {
 static int lowmem_minfree_size = 4;
 static int lmk_fast_run = 1;
 
+static unsigned int offlining;
 static unsigned long lowmem_deathpending_timeout;
 
-#ifdef LMK_CALL_COMPACTION
 extern int compact_nodes(bool sync);
-#endif
 
 #define lowmem_print(level, x...)			\
 	do {						\
 		if (lowmem_debug_level >= (level))	\
-			printk(x);			\
+			pr_info(x);			\
 	} while (0)
+
+#ifdef CONFIG_MEMORY_HOTPLUG
+static int lmk_hotplug_callback(struct notifier_block *self,
+				unsigned long cmd, void *data)
+{
+	switch (cmd) {
+	/* Don't care LMK cases */
+	case MEM_ONLINE:
+	case MEM_OFFLINE:
+	case MEM_CANCEL_ONLINE:
+	case MEM_CANCEL_OFFLINE:
+	case MEM_GOING_ONLINE:
+		offlining = 0;
+		lowmem_print(4, "lmk in normal mode\n");
+		break;
+	/* LMK should account for movable zone */
+	case MEM_GOING_OFFLINE:
+		offlining = 1;
+		lowmem_print(4, "lmk in hotplug mode\n");
+		break;
+	}
+	return NOTIFY_DONE;
+}
+#endif
 
 static int test_task_flag(struct task_struct *p, int flag)
 {
@@ -88,6 +120,8 @@ static int test_task_flag(struct task_struct *p, int flag)
 
 	return 0;
 }
+
+static DEFINE_MUTEX(scan_mutex);
 
 void tune_lmk_zone_param(struct zonelist *zonelist, int classzone_idx,
 					int *other_free, int *other_file)
@@ -107,17 +141,47 @@ void tune_lmk_zone_param(struct zonelist *zonelist, int classzone_idx,
 			if (other_file != NULL)
 				*other_file -= zone_page_state(zone,
 							       NR_FILE_PAGES)
-					      - zone_page_state(zone, NR_SHMEM);
+					- zone_page_state(zone, NR_SHMEM)
+					- zone_page_state(zone, NR_SWAPCACHE);
 		} else if (zone_idx < classzone_idx) {
 			if (zone_watermark_ok(zone, 0, 0, classzone_idx, 0))
 				*other_free -=
-					   zone->lowmem_reserve[classzone_idx];
+				           zone->lowmem_reserve[classzone_idx];
 			else
 				*other_free -=
-					   zone_page_state(zone, NR_FREE_PAGES);
+				           zone_page_state(zone, NR_FREE_PAGES);
 		}
 	}
 }
+
+#ifdef CONFIG_HIGHMEM
+void adjust_gfp_mask(gfp_t *gfp_mask)
+{
+	struct zone *preferred_zone;
+	struct zonelist *zonelist;
+	enum zone_type high_zoneidx;
+
+	if (current_is_kswapd()) {
+		zonelist = node_zonelist(0, *gfp_mask);
+		high_zoneidx = gfp_zone(*gfp_mask);
+		first_zones_zonelist(zonelist, high_zoneidx, NULL,
+				&preferred_zone);
+
+		if (high_zoneidx == ZONE_NORMAL) {
+			if (zone_watermark_ok_safe(preferred_zone, 0,
+					high_wmark_pages(preferred_zone), 0,
+					0))
+				*gfp_mask |= __GFP_HIGHMEM;
+		} else if (high_zoneidx == ZONE_HIGHMEM) {
+			*gfp_mask |= __GFP_HIGHMEM;
+		}
+	}
+}
+#else
+void adjust_gfp_mask(gfp_t *unused)
+{
+}
+#endif
 
 void tune_lmk_param(int *other_free, int *other_file, struct shrink_control *sc)
 {
@@ -128,6 +192,8 @@ void tune_lmk_param(int *other_free, int *other_file, struct shrink_control *sc)
 	unsigned long balance_gap;
 
 	gfp_mask = sc->gfp_mask;
+	adjust_gfp_mask(&gfp_mask);
+
 	zonelist = node_zonelist(0, gfp_mask);
 	high_zoneidx = gfp_zone(gfp_mask);
 	first_zones_zonelist(zonelist, high_zoneidx, NULL, &preferred_zone);
@@ -148,13 +214,12 @@ void tune_lmk_param(int *other_free, int *other_file, struct shrink_control *sc)
 			tune_lmk_zone_param(zonelist, classzone_idx, other_free,
 				       NULL);
 
-		if (zone_watermark_ok(preferred_zone, 0, 0, ZONE_HIGHMEM, 0))
+		if (zone_watermark_ok(preferred_zone, 0, 0, _ZONE, 0))
 			*other_free -=
-				  preferred_zone->lowmem_reserve[ZONE_HIGHMEM];
+			           preferred_zone->lowmem_reserve[_ZONE];
 		else
 			*other_free -= zone_page_state(preferred_zone,
 						      NR_FREE_PAGES);
-
 		lowmem_print(4, "lowmem_shrink of kswapd tunning for highmem "
 			     "ofree %d, %d\n", *other_free, *other_file);
 	} else {
@@ -176,12 +241,14 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	int tasksize;
 	int i;
 	int min_score_adj = OOM_SCORE_ADJ_MAX + 1;
+	int minfree = 0;
 	int selected_tasksize = 0;
 	int selected_oom_score_adj;
 	int array_size = ARRAY_SIZE(lowmem_adj);
 	int other_free;
 	int other_file;
 	unsigned long nr_to_scan = sc->nr_to_scan;
+	struct zone *zone;
 
 	if (nr_to_scan > 0) {
 		if (mutex_lock_interruptible(&scan_mutex) < 0)
@@ -198,6 +265,19 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	else
 		other_file = 0;
 
+	if (offlining) {
+		/* Discount all free space in the section being offlined */
+		for_each_zone(zone) {
+			 if (zone_idx(zone) == ZONE_MOVABLE) {
+				other_free -= zone_page_state(zone,
+						NR_FREE_PAGES);
+				lowmem_print(4, "lowmem_shrink discounted "
+					"%lu pages in movable zone\n",
+					zone_page_state(zone, NR_FREE_PAGES));
+			}
+		}
+        }
+
 	tune_lmk_param(&other_free, &other_file, sc);
 
 	if (lowmem_adj_size < array_size)
@@ -205,8 +285,8 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	if (lowmem_minfree_size < array_size)
 		array_size = lowmem_minfree_size;
 	for (i = 0; i < array_size; i++) {
-		if (other_free < lowmem_minfree[i] &&
-		    other_file < lowmem_minfree[i]) {
+		minfree = lowmem_minfree[i];
+		if (other_free < minfree && other_file < minfree) {
 			min_score_adj = lowmem_adj[i];
 			break;
 		}
@@ -236,6 +316,10 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		int oom_score_adj;
 
 		if (tsk->flags & PF_KTHREAD)
+			continue;
+
+		/* if task no longer has any memory ignore it */
+		if (test_task_flag(tsk, TIF_MM_RELEASED))
 			continue;
 
 		if (time_before_eq(jiffies, lowmem_deathpending_timeout)) {
@@ -271,28 +355,37 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		selected = p;
 		selected_tasksize = tasksize;
 		selected_oom_score_adj = oom_score_adj;
-		lowmem_print(2, "select %d (%s), adj %d, size %d, to kill\n",
-			     p->pid, p->comm, oom_score_adj, tasksize);
+		lowmem_print(2, "select '%s' (%d), adj %d, size %d, to kill\n",
+			     p->comm, p->pid, oom_score_adj, tasksize);
 	}
 	if (selected) {
-		lowmem_print(1, "send sigkill to %d (%s), adj %d, size %d\n",
-			     selected->pid, selected->comm,
-			     selected_oom_score_adj, selected_tasksize);
+		lowmem_print(1, "Killing '%s' (%d), adj %d,\n" \
+				"   to free %ldkB on behalf of '%s' (%d) because\n" \
+				"   cache %ldkB is below limit %ldkB for oom_score_adj %d\n" \
+				"   Free memory is %ldkB above reserved\n",
+			     selected->comm, selected->pid,
+			     selected_oom_score_adj,
+			     selected_tasksize * (long)(PAGE_SIZE / 1024),
+			     current->comm, current->pid,
+			     other_file * (long)(PAGE_SIZE / 1024),
+			     minfree * (long)(PAGE_SIZE / 1024),
+			     min_score_adj,
+			     other_free * (long)(PAGE_SIZE / 1024));
 		lowmem_deathpending_timeout = jiffies + HZ;
 		send_sig(SIGKILL, selected, 0);
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
 		rem -= selected_tasksize;
+		rcu_read_unlock();
 		/* give the system time to free up the memory */
 		msleep_interruptible(20);
-	}
+	} else
+		rcu_read_unlock();
+
 	lowmem_print(4, "lowmem_shrink %lu, %x, return %d\n",
 		     nr_to_scan, sc->gfp_mask, rem);
-	rcu_read_unlock();
-	mutex_unlock(&scan_mutex);
-#ifdef LMK_CALL_COMPACTION
+        mutex_unlock(&scan_mutex);
 	if (selected)
 		compact_nodes(false);
-#endif
 	return rem;
 }
 
@@ -304,6 +397,9 @@ static struct shrinker lowmem_shrinker = {
 static int __init lowmem_init(void)
 {
 	register_shrinker(&lowmem_shrinker);
+#ifdef CONFIG_MEMORY_HOTPLUG
+	hotplug_memory_notifier(lmk_hotplug_callback, 0);
+#endif
 	return 0;
 }
 

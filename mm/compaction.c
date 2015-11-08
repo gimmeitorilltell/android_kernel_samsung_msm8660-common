@@ -694,7 +694,7 @@ static int compact_node(int nid, bool sync)
 			.nr_freepages = 0,
 			.nr_migratepages = 0,
 			.order = -1,
-      .sync = sync,
+			.sync = sync,
 		};
 
 		zone = &pgdat->node_zones[zoneid];
@@ -715,12 +715,14 @@ static int compact_node(int nid, bool sync)
 }
 
 /* Compact all nodes in the system */
-void compact_nodes(bool sync)
+int compact_nodes(bool sync)
 {
 	int nid;
 
 	for_each_online_node(nid)
 		compact_node(nid, sync);
+
+	return COMPACT_COMPLETE;
 }
 
 /* The written value is actually unused, all memory is compacted */
@@ -731,7 +733,7 @@ int sysctl_compaction_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos)
 {
 	if (write)
-		compact_nodes(true);
+		return compact_nodes(true);
 
 	return 0;
 }
