@@ -731,7 +731,9 @@ struct station_info {
 
 	const u8 *assoc_req_ies;
 	size_t assoc_req_ies_len;
+
 	u32 beacon_loss_count;
+
 	/*
 	 * Note: Add a new enum station_info_flags value for each new field and
 	 * use it to check which fields are initialized.
@@ -1261,6 +1263,7 @@ struct cfg80211_ibss_params {
  * @ie: IEs for association request
  * @ie_len: Length of assoc_ie in octets
  * @privacy: indicates whether privacy-enabled APs should be used
+ * @mfp: indicate whether management frame protection is used
  * @crypto: crypto settings
  * @key_len: length of WEP key for shared key authentication
  * @key_idx: index of WEP key for shared key authentication
@@ -1281,6 +1284,7 @@ struct cfg80211_connect_params {
 	u8 *ie;
 	size_t ie_len;
 	bool privacy;
+	enum nl80211_mfp mfp;
 	struct cfg80211_crypto_settings crypto;
 	const u8 *key;
 	u8 key_len, key_idx;
@@ -2732,6 +2736,30 @@ const u8 *cfg80211_find_vendor_ie(unsigned int oui, u8 oui_type,
  * an -ENOMEM.
  */
 extern int regulatory_hint(struct wiphy *wiphy, const char *alpha2);
+
+/**
+ * regulatory_hint_user - hint to the wireless core a regulatory domain
+ * which the driver has received from an application
+ * @alpha2: the ISO/IEC 3166 alpha2 the driver claims its regulatory domain
+ * 	should be in. If @rd is set this should be NULL. Note that if you
+ * 	set this to NULL you should still set rd->alpha2 to some accepted
+ * 	alpha2.
+ *
+ * Wireless drivers can use this function to hint to the wireless core
+ * the current regulatory domain as specified by trusted applications,
+ * it is the driver's responsibilty to estbalish which applications it
+ * trusts.
+ *
+ * The wiphy should be registered to cfg80211 prior to this call.
+ * For cfg80211 drivers this means you must first use wiphy_register(),
+ * for mac80211 drivers you must first use ieee80211_register_hw().
+ *
+ * Drivers should check the return value, its possible you can get
+ * an -ENOMEM or an -EINVAL.
+ *
+ * Return: 0 on success. -ENOMEM, -EINVAL.
+ */
+extern int regulatory_hint_user(const char *alpha2);
 
 /**
  * wiphy_apply_custom_regulatory - apply a custom driver regulatory domain
