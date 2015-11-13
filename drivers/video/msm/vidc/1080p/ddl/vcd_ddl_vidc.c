@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2013, 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -630,9 +630,16 @@ void ddl_vidc_encode_init_codec(struct ddl_client_context *ddl)
 		[ddl->command_channel], hdr_ext_control,
 		r_cframe_skip, false, 0,
 		h263_cpfc_enable, encoder->sps_pps.sps_pps_for_idr_enable_flag,
-		pic_order_count, encoder->closed_gop, encoder->
+/* MMRND_AVRC. Start */
+#if 1
+		encoder->pic_order_cnt_type, encoder->closed_gop, encoder->
 		avc_delimiter_enable, encoder->vui_timinginfo_enable,
+#else
+		encoder->closed_gop, encoder->avc_delimiter_enable,
+		encoder->vui_timinginfo_enable,
+#endif
 		encoder->bitstream_restrict_enable, ltr_enable);
+		
 	if (encoder->vui_timinginfo_enable) {
 		vidc_sm_set_h264_encoder_timing_info(
 			&ddl->shared_mem[ddl->command_channel],
