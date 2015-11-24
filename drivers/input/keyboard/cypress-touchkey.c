@@ -159,6 +159,10 @@ int s2s_switch = 0;
 int s2w_start = 0;
 int s2w_count = 0;
 int s2w_lenient = 0;
+int dt2w_switch = 2;
+int dt2s_switch = 2;
+int dt2w_start = 0;
+int dt2w_count = 0;
 bool scr_suspended = false, exec_count = true;
 bool scr_on_touch = false, barrier[2] = {false, false};
 static struct input_dev * sweep2wake_pwrdev;
@@ -426,7 +430,7 @@ void touchkey_resume_func(struct work_struct *p)
 //	int rc = 0;
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch) {
+	if (s2w_switch || s2s_switch || dt2w_switch || dt2s_switch) {
 		disable_irq_wake(IRQ_TOUCHKEY_INT);		
 	} else {
 #endif
@@ -584,7 +588,8 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
 		if(s2w_count && ((jiffies_to_msecs(jiffies) - s2w_start) > 1500)) s2w_count = 0; //timeout after 1.5 seconds
-		if (!touch_is_pressed && (s2w_switch || s2s_switch)) {
+		if(dt2w_count && ((jiffies_to_msecs(jiffies) - dt2w_start) > 1500)) dt2w_count = 0; //timeout after 1.5 seconds
+		if (!touch_is_pressed && (s2w_switch || s2s_switch || dt2w_switch || dt2s_switch)) {
 			int key = data[0] & KEYCODE_BIT;
 			switch (key) {
 			case 1:
@@ -596,6 +601,22 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 					if (s2w_count > 2 || (s2w_lenient && s2w_count)) sweep2wake_pwrtrigger();
 					s2w_count = 0;
 				}
+				else if(scr_suspended && dt2w_switch == 1){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
+				}
+				else if(!scr_suspended && dt2s_switch == 1){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
+				}
 				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 				break;
 			case 2:
@@ -603,11 +624,43 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 					pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 					s2w_count++;
 				}
+				else if(scr_suspended && dt2w_switch == 2){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
+				}
+				else if(!scr_suspended && dt2s_switch == 2){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
+				}
 				break;
 			case 3:
 				if (s2w_count > 0 && s2w_count < 4){
 					pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 					s2w_count++;
+				}
+				else if(scr_suspended && dt2w_switch == 3){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
+				}
+				else if(!scr_suspended && dt2s_switch == 3){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
 				}
 				break;
 			case 4:
@@ -618,6 +671,22 @@ static irqreturn_t touchkey_interrupt(int irq, void *dummy)  // ks 79 - threaded
 				else if(!scr_suspended && s2s_switch){
 					s2w_count = 1;
 					s2w_start = jiffies_to_msecs(jiffies);
+				}
+				else if(scr_suspended && dt2w_switch == 4){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
+				}
+				else if(!scr_suspended && dt2s_switch == 4){
+					if(dt2w_count == 0) dt2w_start = jiffies_to_msecs(jiffies);
+					if(dt2w_count < 2) dt2w_count++;
+					if (dt2w_count == 2) {
+					sweep2wake_pwrtrigger();
+					dt2w_count = 0;
+					}
 				}
 				pr_debug(KERN_ERR "[TKEY] count: %d and key: %d\n",s2w_count,key);
 				break;
@@ -739,7 +808,7 @@ static void sec_touchkey_early_suspend(struct early_suspend *h)
     printk(KERN_DEBUG "sec_touchkey_early_suspend\n");
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch) {
+	if (s2w_switch || s2s_switch || dt2w_switch || dt2s_switch) {
 		scr_suspended = true;
 		enable_irq_wake(IRQ_TOUCHKEY_INT);
 	} else {
@@ -863,7 +932,7 @@ static void sec_touchkey_early_resume(struct early_suspend *h)
 	}
 
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch) {
+	if (s2w_switch || s2s_switch || dt2w_switch || dt2s_switch) {
 		scr_suspended = false;
 	}
 #endif
@@ -1022,7 +1091,7 @@ if(touchled_cmd_reversed) {
 	|| defined (CONFIG_USA_MODEL_SGH_T769)|| defined(CONFIG_USA_MODEL_SGH_I577)|| defined(CONFIG_CAN_MODEL_SGH_I577R)\
 	|| defined(CONFIG_USA_MODEL_SGH_I757) || defined(CONFIG_CAN_MODEL_SGH_I757M)
 #ifdef CONFIG_TOUCH_CYPRESS_SWEEP2WAKE
-	if (s2w_switch) {
+	if (s2w_switch || s2s_switch || dt2w_switch || dt2s_switch) {
 		disable_irq_wake(IRQ_TOUCHKEY_INT);
 	} else {
 #endif

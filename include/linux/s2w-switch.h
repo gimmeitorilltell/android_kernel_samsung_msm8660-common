@@ -17,6 +17,8 @@
 extern int s2w_switch;
 extern int s2s_switch;
 extern int s2w_lenient;
+extern int dt2w_switch;
+extern int dt2s_switch;
 
 /* The global /sys/android_touch/ kobject for people to chain off of */
 extern struct kobject *android_touch_kobj;
