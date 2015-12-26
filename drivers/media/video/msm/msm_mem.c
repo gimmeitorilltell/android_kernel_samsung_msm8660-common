@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/module.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
 #include <linux/types.h>
@@ -127,17 +128,26 @@ static int msm_pmem_table_add(struct hlist_head *ptype,
 
 	unsigned long len;
 	struct msm_pmem_region *region;
+	void *vaddr;
 
 	region = kmalloc(sizeof(struct msm_pmem_region), GFP_KERNEL);
 	if (!region)
 		goto out;
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-	region->handle = ion_import_fd(client, info->fd);
+	region->handle = ion_import_dma_buf(client, info->fd);
 	if (IS_ERR_OR_NULL(region->handle))
 		goto out1;
 	if (ion_map_iommu(client, region->handle, CAMERA_DOMAIN, GEN_POOL,
-				  SZ_4K, 0, &paddr, &len, UNCACHED, 0) < 0)
+				  SZ_4K, 0, &paddr, &len, 0, 0) < 0)
 		goto out2;
+
+	vaddr = ion_map_kernel(client, region->handle);
+	if (IS_ERR_OR_NULL(vaddr)) {
+		pr_err("%s: could not get virtual address\n", __func__);
+		return 0;
+	}
+	region->vaddr = (unsigned long) vaddr;
+
 #elif CONFIG_ANDROID_PMEM
 	rc = get_pmem_file(info->fd, &paddr, &kvstart, &len, &file);
 	if (rc < 0) {
@@ -208,6 +218,9 @@ static int __msm_register_pmem(struct hlist_head *ptype,
 	case MSM_PMEM_IHIST:
 	case MSM_PMEM_SKIN:
 	case MSM_PMEM_AEC_AWB:
+	case MSM_PMEM_BAYER_GRID:
+	case MSM_PMEM_BAYER_FOCUS:
+	case MSM_PMEM_BAYER_HIST:
 		rc = msm_pmem_table_add(ptype, pinfo, client);
 		break;
 
@@ -235,6 +248,9 @@ static int __msm_pmem_table_del(struct hlist_head *ptype,
 	case MSM_PMEM_IHIST:
 	case MSM_PMEM_SKIN:
 	case MSM_PMEM_AEC_AWB:
+	case MSM_PMEM_BAYER_GRID:
+	case MSM_PMEM_BAYER_FOCUS:
+	case MSM_PMEM_BAYER_HIST:
 		hlist_for_each_entry_safe(region, node, n,
 				ptype, list) {
 
@@ -262,7 +278,6 @@ static int __msm_pmem_table_del(struct hlist_head *ptype,
 	return rc;
 }
 
-/* return of 0 means failure */
 uint8_t msm_pmem_region_lookup(struct hlist_head *ptype,
 	int pmem_type, struct msm_pmem_region *reg, uint8_t maxcount)
 {
@@ -346,14 +361,15 @@ uint8_t msm_pmem_region_lookup_2(struct hlist_head *ptype,
 }
 
 unsigned long msm_pmem_stats_vtop_lookup(
-				struct msm_sync *sync,
+				struct msm_cam_media_controller *mctl,
 				unsigned long buffer,
 				int fd)
 {
 	struct msm_pmem_region *region;
 	struct hlist_node *node, *n;
 
-	hlist_for_each_entry_safe(region, node, n, &sync->pmem_stats, list) {
+	hlist_for_each_entry_safe(region, node, n,
+	&mctl->stats_info.pmem_stats_list, list) {
 		if (((unsigned long)(region->info.vaddr) == buffer) &&
 						(region->info.fd == fd) &&
 						region->info.active == 0) {
@@ -365,21 +381,45 @@ unsigned long msm_pmem_stats_vtop_lookup(
 	return 0;
 }
 
-unsigned long msm_pmem_stats_ptov_lookup(struct msm_sync *sync,
-						unsigned long addr, int *fd)
+unsigned long msm_pmem_stats_ptov_lookup(
+		struct msm_cam_media_controller *mctl,
+		unsigned long addr, int *fd)
 {
 	struct msm_pmem_region *region;
 	struct hlist_node *node, *n;
 
-	hlist_for_each_entry_safe(region, node, n, &sync->pmem_stats, list) {
+	hlist_for_each_entry_safe(region, node, n,
+	&mctl->stats_info.pmem_stats_list, list) {
 		if (addr == region->paddr && region->info.active) {
-			/* offset since we could pass vaddr inside a
-			 * registered pmem buffer */
 			*fd = region->info.fd;
 			region->info.active = 0;
 			return (unsigned long)(region->info.vaddr);
 		}
 	}
+
+    if (addr != 0)
+        pr_err("%s: abnormal addr == 0X%x\n", __func__, (uint32_t)addr);
+
+	return 0;
+}
+
+unsigned long msm_pmem_stats_ptov_lookup_2(
+		struct msm_cam_media_controller *mctl,
+		unsigned long addr, int *fd)
+{
+	struct msm_pmem_region *region;
+	struct hlist_node *node, *n;
+
+	hlist_for_each_entry_safe(region, node, n,
+	&mctl->stats_info.pmem_stats_list, list) {
+		if (addr == region->paddr) {
+			*fd = region->info.fd;
+			return (unsigned long)(region->vaddr);
+		}
+	}
+
+    if (addr != 0)
+        pr_err("%s: abnormal addr == 0X%x\n", __func__, (uint32_t)addr);
 
 	return 0;
 }

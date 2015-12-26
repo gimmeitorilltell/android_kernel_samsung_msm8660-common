@@ -52,71 +52,6 @@ static const struct adc_map_pt adcmap_msmtherm[] = {
 	{107,	120}
 };
 
-#if defined (CONFIG_JPN_MODEL_SC_05D)
-static const struct adc_map_pt adcmap_sec_settherm[] = {
-	{382,	 650},
-	{378,	 600},  // limit to overheat
-	{373,	 550},
-	{367,	 500},
-	{359,	 450},
-	{350,	 400},  // recover from overheat
-	{339,	 350},
-	{329,	 300},
-	{313,	 250},
-	{297,	 200},
-	{280,	 150},
-	{261,	 100},
-	{242,	  50},
-	{223,	   0},  // recover from cold
-	{205,	 -50},  // limit to cold
-	{188,	-100},
-	{173,	-150},
-	{161,	-200}
-};
-#elif defined (CONFIG_JPN_MODEL_SC_03D)
-static const struct adc_map_pt adcmap_sec_settherm[] = {
-	{328,  650},
-	{317,  600},
-	{300,  550},
-	{281,  500},
-	{260,  450},
-	{235,  400},
-	{208,  350},
-	{179,  300},
-	{149,  250},
-	{118,  200},
-	{86,   150},
-	{59,   100},
-	{30,    50},
-	{7,     0},
-	{-14,  -50},
-	{-32, -100},
-	{-46, -150},
-	{-59, -200}
-};
-#else
-static const struct adc_map_pt adcmap_sec_settherm[] = {
-	{386,	 650},
-	{381,	 600},
-	{376,	 550},
-	{370,	 500},
-	{362,	 450},
-	{354,	 400},
-	{344,	 350},
-	{332,	 300},
-	{318,	 250},
-	{303,	 200},
-	{286,	 150},
-	{269,	 100},
-	{250,	  50},
-	{232,	   0},
-	{213,	 -50},
-	{196,	-100},
-	{180,	-150},
-	{165,	-200}
-};
-#endif
-
 static const struct adc_map_pt adcmap_ntcg104ef104fb[] = {
 	{696483,	-40960},
 	{649148,	-39936},
@@ -531,21 +466,4 @@ int32_t scale_xtern_chgr_cur(int32_t adc_code,
 	adc_chan_result->physical = (int32_t) adc_chan_result->measurement;
 
 	return 0;
-}
-int32_t scale_sec_settherm(int32_t adc_code,
-		const struct adc_properties *adc_properties,
-		const struct chan_properties *chan_properties,
-		struct adc_chan_result *adc_chan_result)
-{
-	adc_chan_result->adc_code = adc_code;
-	//printk("%s: adc_value: %d\n", __func__, adc_chan_result->adc_code);
-	adc_chan_result->measurement = (11768-adc_chan_result->adc_code)/30;
-	adc_chan_result->physical = (int32_t) adc_chan_result->measurement;
-
-	/* convert mV ---> degC using the table */
-	return adc_map_linear(
-			adcmap_sec_settherm,
-			sizeof(adcmap_sec_settherm)/sizeof(adcmap_sec_settherm[0]),
-			adc_chan_result->physical,
-			&adc_chan_result->physical);
 }

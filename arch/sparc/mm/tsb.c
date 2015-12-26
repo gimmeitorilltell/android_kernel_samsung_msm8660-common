@@ -6,7 +6,6 @@
 #include <linux/kernel.h>
 #include <linux/preempt.h>
 #include <linux/slab.h>
-#include <asm/system.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
@@ -151,7 +150,19 @@ static void setup_tsb_params(struct mm_struct *mm, unsigned long tsb_idx, unsign
 	mm->context.tsb_block[tsb_idx].tsb_nentries =
 		tsb_bytes / sizeof(struct tsb);
 
-	base = TSBMAP_BASE;
+	switch (tsb_idx) {
+	case MM_TSB_BASE:
+		base = TSBMAP_8K_BASE;
+		break;
+#if defined(CONFIG_HUGETLB_PAGE) || defined(CONFIG_TRANSPARENT_HUGEPAGE)
+	case MM_TSB_HUGE:
+		base = TSBMAP_4M_BASE;
+		break;
+#endif
+	default:
+		BUG();
+	}
+
 	tte = pgprot_val(PAGE_KERNEL_LOCKED);
 	tsb_paddr = __pa(mm->context.tsb_block[tsb_idx].tsb);
 	BUG_ON(tsb_paddr & (tsb_bytes - 1UL));
@@ -263,6 +274,8 @@ static void setup_tsb_params(struct mm_struct *mm, unsigned long tsb_idx, unsign
 	}
 }
 
+struct kmem_cache *pgtable_cache __read_mostly;
+
 static struct kmem_cache *tsb_caches[8] __read_mostly;
 
 static const char *tsb_cache_names[8] = {
@@ -279,6 +292,15 @@ static const char *tsb_cache_names[8] = {
 void __init pgtable_cache_init(void)
 {
 	unsigned long i;
+
+	pgtable_cache = kmem_cache_create("pgtable_cache",
+					  PAGE_SIZE, PAGE_SIZE,
+					  0,
+					  _clear_page);
+	if (!pgtable_cache) {
+		prom_printf("pgtable_cache_init(): Could not create!\n");
+		prom_halt();
+	}
 
 	for (i = 0; i < 8; i++) {
 		unsigned long size = 8192 << i;

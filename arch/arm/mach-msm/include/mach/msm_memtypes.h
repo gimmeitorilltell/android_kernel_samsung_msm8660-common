@@ -29,19 +29,11 @@ unsigned int get_num_populated_chipselects(void);
 unsigned int get_num_memory_banks(void);
 unsigned int get_memory_bank_size(unsigned int);
 unsigned int get_memory_bank_start(unsigned int);
-int soc_change_memory_power(u64, u64, int);
 
 enum {
 	MEMTYPE_NONE = -1,
 	MEMTYPE_SMI_KERNEL = 0,
 	MEMTYPE_SMI,
-#ifdef CONFIG_SEC_KERNEL_REBASE_FOR_PMEM_OPTIMIZATION
-	MEMTYPE_PMEM_ADSP,
-#endif
-#if defined (CONFIG_SAMSUNG_MEMORY_LAYOUT_ARRANGE)
-	MEMTYPE_PMEM_MDP,
-	MEMTYPE_PMEM_AUDIO,
-#endif
 	MEMTYPE_EBI0,
 	MEMTYPE_EBI1,
 	MEMTYPE_MAX,
@@ -72,6 +64,9 @@ struct reserve_info {
 };
 
 extern struct reserve_info *reserve_info;
+
+int __init dt_scan_for_memory_reserve(unsigned long node, const char *uname,
+					int depth, void *data);
 
 unsigned long __init reserve_memory_for_fmem(unsigned long, unsigned long);
 #endif

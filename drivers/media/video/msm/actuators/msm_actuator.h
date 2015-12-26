@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,6 +12,7 @@
 #ifndef MSM_ACTUATOR_H
 #define MSM_ACTUATOR_H
 
+#include <linux/module.h>
 #include <linux/i2c.h>
 #include <mach/camera.h>
 #include <mach/gpio.h>
@@ -37,21 +38,8 @@
 #define LINFO(fmt, args...) CDBG(fmt, ##args)
 #endif
 
+
 struct msm_actuator_ctrl_t;
-
-struct region_params_t {
-	/* [0] = ForwardDirection Macro boundary
-	   [1] = ReverseDirection Inf boundary
-	 */
-	uint16_t step_bound[2];
-	uint16_t code_per_step;
-};
-
-struct damping_params_t {
-	uint16_t damping_step;
-	uint16_t damping_delay;
-	void *hw_params;
-};
 
 struct damping_t {
 	struct damping_params_t *ringing_params;
@@ -77,6 +65,12 @@ struct msm_actuator_func_tbl {
 			struct damping_params_t *,
 			int8_t,
 			int16_t);
+	int32_t (*actuator_set_ois_mode) (struct msm_actuator_ctrl_t *, int);
+	int32_t (*actuator_update_ois_tbl) (struct msm_actuator_ctrl_t *, struct sensor_actuator_info_t *);
+	int32_t (*actuator_set_af_value) (struct msm_actuator_ctrl_t *, af_value_t);
+	int32_t (*actuator_set_ois_calibration) (struct msm_actuator_ctrl_t *, struct msm_actuator_get_ois_cal_info_t *);
+    int32_t (*actuator_do_cal)(struct msm_actuator_ctrl_t *, struct msm_actuator_get_vcm_cal_info_t *); 
+
 };
 
 struct msm_actuator_ctrl_t {
@@ -103,13 +97,21 @@ struct msm_actuator_ctrl_t {
 	void *user_data;
 	uint32_t vcm_pwd;
 	uint32_t vcm_enable;
+	af_algo_t af_algo; 
+	int ois_ready_version; 
+	uint8_t ois_mfgtest_in_progress; 
+	uint8_t enable_focus_step_log;
+	struct msm_actuator_get_ois_info_t get_ois_info;
+	struct msm_actuator_get_ois_tbl_t get_ois_tbl;
+	struct msm_actuator_af_OTP_info_t af_OTP_info;
 };
 
 int32_t msm_actuator_i2c_write_b_af(struct msm_actuator_ctrl_t *a_ctrl,
 		uint8_t msb,
 		uint8_t lsb);
 int32_t msm_actuator_config(struct msm_actuator_ctrl_t *a_ctrl,
-		void __user *cfg_data);
+		struct msm_actuator_info *board_info,
+		void __user *cfg_data); 
 int32_t msm_actuator_move_focus(struct msm_actuator_ctrl_t *a_ctrl,
 		int direction,
 		int32_t num_steps);

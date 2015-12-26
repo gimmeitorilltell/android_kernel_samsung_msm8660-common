@@ -36,6 +36,11 @@
 #include <linux/android_pmem.h>
 #include <mach/msm_iomap.h>
 #include <mach/socinfo.h>
+#include <linux/sched.h>
+#include <linux/of_fdt.h>
+
+/* fixme */
+#include <asm/tlbflush.h>
 #include <../../mm/mm.h>
 #include <linux/fmem.h>
 
@@ -108,7 +113,7 @@ void invalidate_caches(unsigned long vstart,
 	outer_inv_range(pstart, pstart + length);
 }
 
-void *alloc_bootmem_aligned(unsigned long size, unsigned long alignment)
+void * __init alloc_bootmem_aligned(unsigned long size, unsigned long alignment)
 {
 	void *unused_addr = NULL;
 	unsigned long addr, tmp_size, unused_size;
@@ -136,35 +141,9 @@ void *alloc_bootmem_aligned(unsigned long size, unsigned long alignment)
 	return (void *)addr;
 }
 
-int (*change_memory_power)(u64, u64, int);
-
-int platform_physical_remove_pages(u64 start, u64 size)
-{
-	if (!change_memory_power)
-		return 0;
-	return change_memory_power(start, size, MEMORY_DEEP_POWERDOWN);
-}
-
-int platform_physical_active_pages(u64 start, u64 size)
-{
-	if (!change_memory_power)
-		return 0;
-	return change_memory_power(start, size, MEMORY_ACTIVE);
-}
-
-int platform_physical_low_power_pages(u64 start, u64 size)
-{
-	if (!change_memory_power)
-		return 0;
-	return change_memory_power(start, size, MEMORY_SELF_REFRESH);
-}
-
 char *memtype_name[] = {
 	"SMI_KERNEL",
 	"SMI",
-#ifdef CONFIG_SEC_KERNEL_REBASE_FOR_PMEM_OPTIMIZATION
-	"ADSP",
-#endif
 	"EBI0",
 	"EBI1"
 };
@@ -282,6 +261,8 @@ static void __init reserve_memory_for_mempools(void)
 			if (size >= mt->size) {
 				size = stable_size(mb,
 					reserve_info->low_unstable_address);
+				if (!size)
+					continue;
 				/* mt->size may be larger than size, all this
 				 * means is that we are carving the memory pool
 				 * out of multiple contiguous memory banks.
@@ -293,27 +274,6 @@ static void __init reserve_memory_for_mempools(void)
 			}
 		}
 	}
-}
-
-unsigned long __init reserve_memory_for_fmem(unsigned long fmem_size, 
-						unsigned long align)
-{
-	struct membank *mb;
-	int ret;
-	unsigned long fmem_phys;
-
-	if (!fmem_size)
-		return 0;
-
-	mb = &meminfo.bank[meminfo.nr_banks - 1];
-	
-	fmem_phys = mb->start + (mb->size - fmem_size);
-	fmem_phys = ALIGN(fmem_phys-align+1, align);
-	ret = memblock_remove(fmem_phys, fmem_size);
-	BUG_ON(ret);
-
-	pr_info("fmem start %lx size %lx\n", fmem_phys, fmem_size);
-	return fmem_phys;
 }
 
 static void __init initialize_mempools(void)
@@ -333,6 +293,8 @@ static void __init initialize_mempools(void)
 	}
 }
 
+#define  MAX_FIXED_AREA_SIZE 0x11000000
+
 void __init msm_reserve(void)
 {
 	unsigned long msm_fixed_area_size;
@@ -344,7 +306,10 @@ void __init msm_reserve(void)
 	msm_fixed_area_size = reserve_info->fixed_area_size;
 	msm_fixed_area_start = reserve_info->fixed_area_start;
 	if (msm_fixed_area_size)
-		reserve_info->low_unstable_address = msm_fixed_area_start;
+		if (msm_fixed_area_start > reserve_info->low_unstable_address
+			- MAX_FIXED_AREA_SIZE)
+			reserve_info->low_unstable_address =
+			msm_fixed_area_start;
 
 	calculate_reserve_limits();
 	adjust_reserve_sizes();
@@ -376,64 +341,6 @@ unsigned long allocate_contiguous_ebi_nomap(unsigned long size,
 }
 EXPORT_SYMBOL(allocate_contiguous_ebi_nomap);
 
-/* emulation of the deprecated pmem_kalloc and pmem_kfree */
-int32_t pmem_kalloc(const size_t size, const uint32_t flags)
-{
-	int pmem_memtype;
-	int memtype = MEMTYPE_NONE;
-	int ebi1_memtype = MEMTYPE_EBI1;
-	unsigned int align;
-	int32_t paddr;
-
-	switch (flags & PMEM_ALIGNMENT_MASK) {
-	case PMEM_ALIGNMENT_4K:
-		align = SZ_4K;
-		break;
-	case PMEM_ALIGNMENT_1M:
-		align = SZ_1M;
-		break;
-	default:
-		pr_alert("Invalid alignment %x\n",
-			(flags & PMEM_ALIGNMENT_MASK));
-		return -EINVAL;
-	}
-
-	/* on 7x30 and 8x55 "EBI1 kernel PMEM" is really on EBI0 */
-	if (cpu_is_msm7x30() || cpu_is_msm8x55())
-			ebi1_memtype = MEMTYPE_EBI0;
-
-	pmem_memtype = flags & PMEM_MEMTYPE_MASK;
-	if (pmem_memtype == PMEM_MEMTYPE_EBI1)
-		memtype = ebi1_memtype;
-	else if (pmem_memtype == PMEM_MEMTYPE_SMI)
-		memtype = MEMTYPE_SMI_KERNEL;
-	else {
-		pr_alert("Invalid memory type %x\n",
-			flags & PMEM_MEMTYPE_MASK);
-		return -EINVAL;
-	}
-
-	paddr = _allocate_contiguous_memory_nomap(size, memtype, align,
-		__builtin_return_address(0));
-
-	if (!paddr && pmem_memtype == PMEM_MEMTYPE_SMI)
-		paddr = _allocate_contiguous_memory_nomap(size,
-			ebi1_memtype, align, __builtin_return_address(0));
-
-	if (!paddr)
-		return -ENOMEM;
-	return paddr;
-}
-EXPORT_SYMBOL(pmem_kalloc);
-
-int pmem_kfree(const int32_t physaddr)
-{
-	free_contiguous_memory_by_paddr(physaddr);
-
-	return 0;
-}
-EXPORT_SYMBOL(pmem_kfree);
-
 unsigned int msm_ttbr0;
 
 void store_ttbr0(void)
@@ -451,4 +358,138 @@ int request_fmem_c_region(void *unused)
 int release_fmem_c_region(void *unused)
 {
 	return fmem_set_state(FMEM_T_STATE);
+}
+
+static char * const memtype_names[] = {
+	[MEMTYPE_SMI_KERNEL] = "SMI_KERNEL",
+	[MEMTYPE_SMI]	= "SMI",
+	[MEMTYPE_EBI0] = "EBI0",
+	[MEMTYPE_EBI1] = "EBI1",
+};
+
+int msm_get_memory_type_from_name(const char *memtype_name)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(memtype_names); i++) {
+		if (memtype_names[i] &&
+		    strcmp(memtype_name, memtype_names[i]) == 0)
+			return i;
+	}
+
+	pr_err("Could not find memory type %s\n", memtype_name);
+	return -EINVAL;
+}
+
+static int reserve_memory_type(const char *mem_name,
+				struct memtype_reserve *reserve_table,
+				int size)
+{
+	int ret = msm_get_memory_type_from_name(mem_name);
+
+	if (ret >= 0) {
+		reserve_table[ret].size += size;
+		ret = 0;
+	}
+	return ret;
+}
+
+static int check_for_compat(unsigned long node)
+{
+	char **start = __compat_exports_start;
+
+	for ( ; start < __compat_exports_end; start++)
+		if (of_flat_dt_is_compatible(node, *start))
+			return 1;
+
+	return 0;
+}
+
+int __init dt_scan_for_memory_reserve(unsigned long node, const char *uname,
+		int depth, void *data)
+{
+	char *memory_name_prop;
+	unsigned int *memory_remove_prop;
+	unsigned long memory_name_prop_length;
+	unsigned long memory_remove_prop_length;
+	unsigned long memory_size_prop_length;
+	unsigned int *memory_size_prop;
+	unsigned int memory_size;
+	unsigned int memory_start;
+	int ret;
+
+	memory_name_prop = of_get_flat_dt_prop(node,
+						"qcom,memory-reservation-type",
+						&memory_name_prop_length);
+	memory_remove_prop = of_get_flat_dt_prop(node,
+						"qcom,memblock-remove",
+						&memory_remove_prop_length);
+
+	if (memory_name_prop || memory_remove_prop) {
+		if (!check_for_compat(node))
+			goto out;
+	} else {
+		goto out;
+	}
+
+	if (memory_name_prop) {
+		if (strnlen(memory_name_prop, memory_name_prop_length) == 0) {
+			WARN(1, "Memory name was malformed\n");
+			goto mem_remove;
+		}
+
+		memory_size_prop = of_get_flat_dt_prop(node,
+						"qcom,memory-reservation-size",
+						&memory_size_prop_length);
+
+		if (memory_size_prop &&
+		    (memory_size_prop_length == sizeof(unsigned int))) {
+			memory_size = be32_to_cpu(*memory_size_prop);
+
+			if (reserve_memory_type(memory_name_prop,
+						data, memory_size) == 0)
+				pr_info("%s reserved %s size %x\n",
+					uname, memory_name_prop, memory_size);
+			else
+				WARN(1, "Node %s reserve failed\n",
+						uname);
+		} else {
+			WARN(1, "Node %s specified bad/nonexistent size\n",
+					uname);
+		}
+	}
+
+mem_remove:
+
+	if (memory_remove_prop) {
+		if (memory_remove_prop_length != (2*sizeof(unsigned int))) {
+			WARN(1, "Memory remove malformed\n");
+			goto out;
+		}
+
+		memory_start = be32_to_cpu(memory_remove_prop[0]);
+		memory_size = be32_to_cpu(memory_remove_prop[1]);
+
+		ret = memblock_remove(memory_start, memory_size);
+		if (ret)
+			WARN(1, "Failed to remove memory %x-%x\n",
+				memory_start, memory_start+memory_size);
+		else
+			pr_info("Node %s removed memory %x-%x\n", uname,
+				memory_start, memory_start+memory_size);
+	}
+
+out:
+	return 0;
+}
+
+unsigned long get_ddr_size(void)
+{
+	unsigned int i;
+	unsigned long ret = 0;
+
+	for (i = 0; i < meminfo.nr_banks; i++)
+		ret += meminfo.bank[i].size;
+
+	return ret;
 }

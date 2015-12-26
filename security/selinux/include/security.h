@@ -55,7 +55,6 @@
 #define SE_SBINITIALIZED	0x10
 #define SE_SBPROC		0x20
 #define SE_SBLABELSUPP	0x40
-#define SE_SBGENFS	0x80
 
 #define CONTEXT_STR	"context="
 #define FSCONTEXT_STR	"fscontext="
@@ -250,6 +249,14 @@ struct selinux_kernel_status {
 
 extern void selinux_status_update_setenforce(int enforcing);
 extern void selinux_status_update_policyload(int seqno);
+extern void selinux_complete_init(void);
+extern int selinux_disable(void);
+extern void exit_sel_fs(void);
+extern struct dentry *selinux_null;
+extern struct vfsmount *selinuxfs_mount;
+extern void selnl_notify_setenforce(int val);
+extern void selnl_notify_policyload(u32 seqno);
+extern int selinux_nlmsg_lookup(u16 sclass, u16 nlmsg_type, u32 *perm);
 
 #endif /* _SELINUX_SECURITY_H_ */
 

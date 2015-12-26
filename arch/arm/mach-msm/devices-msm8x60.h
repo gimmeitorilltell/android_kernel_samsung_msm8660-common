@@ -22,17 +22,6 @@
 #define MSM_SSBI1_I2C_BUS_ID     6
 #define MSM_SSBI2_I2C_BUS_ID     7
 #define MSM_SSBI3_I2C_BUS_ID     8
-#define MSM_AMP_I2C_BUS_ID       9 
-#define MSM_TKEY_I2C_BUS_ID      13
-#define MSM_MOTOR_I2C_BUS_ID 	 17
-
-#if defined(CONFIG_PN544_NFC)
-#define MSM_GSBI10_QUP_I2C_BUS_ID		14
-#endif
-
-#if defined (CONFIG_EPEN_WACOM_G5SP)
-#define MSM_GSBI11_QUP_I2C_BUS_ID 18
-#endif 
 
 #ifdef CONFIG_SND_SOC_MSM8660_APQ
 extern struct platform_device msm_pcm;
@@ -67,6 +56,7 @@ extern struct platform_device msm_bus_def_fab;
 extern struct platform_device msm_device_smd;
 extern struct platform_device msm_device_gpio;
 extern struct platform_device msm_device_vidc;
+extern struct platform_device apq8064_msm_device_vidc;
 
 extern struct platform_device msm_charm_modem;
 extern struct platform_device msm_device_tz_log;

@@ -26,6 +26,7 @@
 #include <linux/err.h>
 #include <linux/gpio.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
@@ -70,26 +71,26 @@ struct voltage_map_desc {
 	unsigned int n_bits;
 };
 
-/* Voltage maps in mV */
+/* Voltage maps in uV */
 static const struct voltage_map_desc ldo_voltage_map_desc = {
-	.min = 800,	.max = 3950,	.step = 50,	.n_bits = 6,
+	.min = 800000,	.max = 3950000,	.step = 50000,	.n_bits = 6,
 }; /* LDO1 ~ 18, 21 all */
 
 static const struct voltage_map_desc buck1245_voltage_map_desc = {
-	.min = 650,	.max = 2225,	.step = 25,	.n_bits = 6,
+	.min = 650000,	.max = 2225000,	.step = 25000,	.n_bits = 6,
 }; /* Buck1, 2, 4, 5 */
 
 static const struct voltage_map_desc buck37_voltage_map_desc = {
-	.min = 750,	.max = 3900,	.step = 50,	.n_bits = 6,
+	.min = 750000,	.max = 3900000,	.step = 50000,	.n_bits = 6,
 }; /* Buck3, 7 */
 
-/* current map in mA */
+/* current map in uA */
 static const struct voltage_map_desc charger_current_map_desc = {
-	.min = 200,	.max = 950,	.step = 50,	.n_bits = 4,
+	.min = 200000,	.max = 950000,	.step = 50000,	.n_bits = 4,
 };
 
 static const struct voltage_map_desc topoff_current_map_desc = {
-	.min = 50,	.max = 200,	.step = 10,	.n_bits = 4,
+	.min = 50000,	.max = 200000,	.step = 10000,	.n_bits = 4,
 };
 
 static const struct voltage_map_desc *reg_voltage_map[] = {
@@ -129,15 +130,10 @@ static const struct voltage_map_desc *reg_voltage_map[] = {
 	[MAX8997_CHARGER_TOPOFF] = &topoff_current_map_desc,
 };
 
-static inline int max8997_get_rid(struct regulator_dev *rdev)
-{
-	return rdev_get_id(rdev);
-}
-
 static int max8997_list_voltage_safeout(struct regulator_dev *rdev,
 		unsigned int selector)
 {
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 
 	if (rid == MAX8997_ESAFEOUT1 || rid == MAX8997_ESAFEOUT2) {
 		switch (selector) {
@@ -160,7 +156,7 @@ static int max8997_list_voltage_safeout(struct regulator_dev *rdev,
 static int max8997_list_voltage_charger_cv(struct regulator_dev *rdev,
 		unsigned int selector)
 {
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 
 	if (rid != MAX8997_CHARGER_CV)
 		goto err;
@@ -183,7 +179,7 @@ static int max8997_list_voltage(struct regulator_dev *rdev,
 		unsigned int selector)
 {
 	const struct voltage_map_desc *desc;
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	int val;
 
 	if (rid >= ARRAY_SIZE(reg_voltage_map) ||
@@ -198,13 +194,13 @@ static int max8997_list_voltage(struct regulator_dev *rdev,
 	if (val > desc->max)
 		return -EINVAL;
 
-	return val * 1000;
+	return val;
 }
 
 static int max8997_get_enable_register(struct regulator_dev *rdev,
 		int *reg, int *mask, int *pattern)
 {
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 
 	switch (rid) {
 	case MAX8997_LDO1 ... MAX8997_LDO21:
@@ -324,7 +320,7 @@ static int max8997_reg_disable(struct regulator_dev *rdev)
 static int max8997_get_voltage_register(struct regulator_dev *rdev,
 		int *_reg, int *_shift, int *_mask)
 {
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	int reg, shift = 0, mask = 0x3f;
 
 	switch (rid) {
@@ -385,7 +381,7 @@ static int max8997_get_voltage(struct regulator_dev *rdev)
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = max8997->iodev->i2c;
 	int reg, shift, mask, ret;
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	u8 val;
 
 	ret = max8997_get_voltage_register(rdev, &reg, &shift, &mask);
@@ -445,7 +441,7 @@ static int max8997_set_voltage_charger_cv(struct regulator_dev *rdev,
 {
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = max8997->iodev->i2c;
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	int lb, ub;
 	int reg, shift = 0, mask, ret = 0;
 	u8 val = 0x0;
@@ -500,9 +496,8 @@ static int max8997_set_voltage_ldobuck(struct regulator_dev *rdev,
 {
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = max8997->iodev->i2c;
-	int min_vol = min_uV / 1000, max_vol = max_uV / 1000;
 	const struct voltage_map_desc *desc;
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	int reg, shift = 0, mask, ret;
 	int i;
 	u8 org;
@@ -526,7 +521,7 @@ static int max8997_set_voltage_ldobuck(struct regulator_dev *rdev,
 
 	desc = reg_voltage_map[rid];
 
-	i = max8997_get_voltage_proper_val(desc, min_vol, max_vol);
+	i = max8997_get_voltage_proper_val(desc, min_uV, max_uV);
 	if (i < 0)
 		return i;
 
@@ -545,7 +540,7 @@ static int max8997_set_voltage_ldobuck(struct regulator_dev *rdev,
 		/* If the voltage is increasing */
 		if (org < i)
 			udelay(DIV_ROUND_UP(desc->step * (i - org),
-						max8997->ramp_delay));
+						max8997->ramp_delay * 1000));
 	}
 
 	return ret;
@@ -563,7 +558,7 @@ static int max8997_assess_side_effect(struct regulator_dev *rdev,
 		u8 new_val, int *best)
 {
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	u8 *buckx_val[3];
 	bool buckx_gpiodvs[3];
 	int side_effect[8];
@@ -640,11 +635,10 @@ static int max8997_set_voltage_buck(struct regulator_dev *rdev,
 		int min_uV, int max_uV, unsigned *selector)
 {
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	const struct voltage_map_desc *desc;
 	int new_val, new_idx, damage, tmp_val, tmp_idx, tmp_dmg;
 	bool gpio_dvs_mode = false;
-	int min_vol = min_uV / 1000, max_vol = max_uV / 1000;
 
 	if (rid < MAX8997_BUCK1 || rid > MAX8997_BUCK7)
 		return -EINVAL;
@@ -669,7 +663,7 @@ static int max8997_set_voltage_buck(struct regulator_dev *rdev,
 						selector);
 
 	desc = reg_voltage_map[rid];
-	new_val = max8997_get_voltage_proper_val(desc, min_vol, max_vol);
+	new_val = max8997_get_voltage_proper_val(desc, min_uV, max_uV);
 	if (new_val < 0)
 		return new_val;
 
@@ -723,7 +717,7 @@ static int max8997_set_voltage_safeout(struct regulator_dev *rdev,
 {
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = max8997->iodev->i2c;
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 	int reg, shift = 0, mask, ret;
 	int i = 0;
 	u8 val;
@@ -765,7 +759,7 @@ static int max8997_reg_disable_suspend(struct regulator_dev *rdev)
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = max8997->iodev->i2c;
 	int ret, reg, mask, pattern;
-	int rid = max8997_get_rid(rdev);
+	int rid = rdev_get_id(rdev);
 
 	ret = max8997_get_enable_register(rdev, &reg, &mask, &pattern);
 	if (ret)
@@ -907,13 +901,13 @@ static struct regulator_desc regulators[] = {
 	},
 	regulator_desc_buck(7),
 	{
-		.name	= "EN32KHz AP",
+		.name	= "EN32KHz_AP",
 		.id	= MAX8997_EN32KHZ_AP,
 		.ops	= &max8997_fixedvolt_ops,
 		.type	= REGULATOR_VOLTAGE,
 		.owner	= THIS_MODULE,
 	}, {
-		.name	= "EN32KHz CP",
+		.name	= "EN32KHz_CP",
 		.id	= MAX8997_EN32KHZ_CP,
 		.ops	= &max8997_fixedvolt_ops,
 		.type	= REGULATOR_VOLTAGE,
@@ -937,7 +931,7 @@ static struct regulator_desc regulators[] = {
 		.type	= REGULATOR_VOLTAGE,
 		.owner	 = THIS_MODULE,
 	}, {
-		.name	= "CHARGER CV",
+		.name	= "CHARGER_CV",
 		.id	= MAX8997_CHARGER_CV,
 		.ops	= &max8997_fixedstate_ops,
 		.type	= REGULATOR_VOLTAGE,
@@ -949,7 +943,7 @@ static struct regulator_desc regulators[] = {
 		.type	= REGULATOR_CURRENT,
 		.owner	 = THIS_MODULE,
 	}, {
-		.name	= "CHARGER TOPOFF",
+		.name	= "CHARGER_TOPOFF",
 		.id	= MAX8997_CHARGER_TOPOFF,
 		.ops	= &max8997_charger_fixedstate_ops,
 		.type	= REGULATOR_CURRENT,
@@ -1001,8 +995,8 @@ static __devinit int max8997_pmic_probe(struct platform_device *pdev)
 		max8997->buck1_vol[i] = ret =
 			max8997_get_voltage_proper_val(
 					&buck1245_voltage_map_desc,
-					pdata->buck1_voltage[i] / 1000,
-					pdata->buck1_voltage[i] / 1000 +
+					pdata->buck1_voltage[i],
+					pdata->buck1_voltage[i] +
 					buck1245_voltage_map_desc.step);
 		if (ret < 0)
 			goto err_alloc;
@@ -1010,8 +1004,8 @@ static __devinit int max8997_pmic_probe(struct platform_device *pdev)
 		max8997->buck2_vol[i] = ret =
 			max8997_get_voltage_proper_val(
 					&buck1245_voltage_map_desc,
-					pdata->buck2_voltage[i] / 1000,
-					pdata->buck2_voltage[i] / 1000 +
+					pdata->buck2_voltage[i],
+					pdata->buck2_voltage[i] +
 					buck1245_voltage_map_desc.step);
 		if (ret < 0)
 			goto err_alloc;
@@ -1019,8 +1013,8 @@ static __devinit int max8997_pmic_probe(struct platform_device *pdev)
 		max8997->buck5_vol[i] = ret =
 			max8997_get_voltage_proper_val(
 					&buck1245_voltage_map_desc,
-					pdata->buck5_voltage[i] / 1000,
-					pdata->buck5_voltage[i] / 1000 +
+					pdata->buck5_voltage[i],
+					pdata->buck5_voltage[i] +
 					buck1245_voltage_map_desc.step);
 		if (ret < 0)
 			goto err_alloc;
@@ -1145,7 +1139,7 @@ static __devinit int max8997_pmic_probe(struct platform_device *pdev)
 			regulators[id].n_voltages = 16;
 
 		rdev[i] = regulator_register(&regulators[id], max8997->dev,
-				pdata->regulators[i].initdata, max8997);
+				pdata->regulators[i].initdata, max8997, NULL);
 		if (IS_ERR(rdev[i])) {
 			ret = PTR_ERR(rdev[i]);
 			dev_err(max8997->dev, "regulator init failed for %d\n",

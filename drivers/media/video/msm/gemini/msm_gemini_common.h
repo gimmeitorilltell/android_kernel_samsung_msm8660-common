@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,7 +13,7 @@
 #ifndef MSM_GEMINI_COMMON_H
 #define MSM_GEMINI_COMMON_H
 
-//#define MSM_GEMINI_DEBUG
+#define MSM_GEMINI_DEBUG
 #ifdef MSM_GEMINI_DEBUG
 #define GMN_DBG(fmt, args...) pr_debug(fmt, ##args)
 #else
@@ -36,4 +36,4 @@ enum GEMINI_ROTATION {
 	GEMINI_ROTATION_270
 };
 
-#endif /* MSM_GEMINI_COMMON_H */
+#endif 

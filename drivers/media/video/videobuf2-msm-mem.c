@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * Based on videobuf-dma-contig.c,
  * (c) 2008 Magnus Damm
@@ -30,6 +30,7 @@
 #include <media/msm_camera.h>
 #include <mach/memory.h>
 #include <mach/msm_subsystem_map.h>
+
 #include <media/videobuf2-core.h>
 
 #define MAGIC_PMEM 0x0733ac64
@@ -56,7 +57,7 @@ static unsigned long msm_mem_allocate(struct videobuf2_contig_pmem *mem)
 		goto client_failed;
 	}
 	mem->ion_handle = ion_alloc(mem->client, mem->size, SZ_4K,
-		(0x1 << ION_CP_MM_HEAP_ID | 0x1 << ION_IOMMU_HEAP_ID));
+		(0x1 << ION_CP_MM_HEAP_ID | 0x1 << ION_IOMMU_HEAP_ID), 0);
 	if (IS_ERR((void *)mem->ion_handle)) {
 		pr_err("%s Could not allocate\n", __func__);
 		goto alloc_failed;
@@ -64,7 +65,7 @@ static unsigned long msm_mem_allocate(struct videobuf2_contig_pmem *mem)
 	rc = ion_map_iommu(mem->client, mem->ion_handle,
 			CAMERA_DOMAIN, GEN_POOL, SZ_4K, 0,
 			(unsigned long *)&phyaddr,
-			(unsigned long *)&len, UNCACHED, 0);
+			(unsigned long *)&len, 0, 0);
 	if (rc < 0) {
 		pr_err("%s Could not get physical address\n", __func__);
 		goto phys_failed;
@@ -160,16 +161,6 @@ int videobuf2_pmem_contig_mmap_get(struct videobuf2_contig_pmem *mem,
 }
 EXPORT_SYMBOL_GPL(videobuf2_pmem_contig_mmap_get);
 
-/**
- * videobuf_pmem_contig_user_get() - setup user space memory pointer
- * @mem: per-buffer private videobuf-contig-pmem data
- * @vb: video buffer to map
- *
- * This function validates and sets up a pointer to user space memory.
- * Only physically contiguous pfn-mapped memory is accepted.
- *
- * Returns 0 if successful.
- */
 int videobuf2_pmem_contig_user_get(struct videobuf2_contig_pmem *mem,
 					struct videobuf2_msm_offset *offset,
 					enum videobuf2_buffer_type buffer_type,
@@ -182,18 +173,27 @@ int videobuf2_pmem_contig_user_get(struct videobuf2_contig_pmem *mem,
 	unsigned long kvstart;
 #endif
 	unsigned long paddr = 0;
+	void *vaddr;
 	if (mem->phyaddr != 0)
 		return 0;
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-	mem->ion_handle = ion_import_fd(client, (int)mem->vaddr);
+	mem->ion_handle = ion_import_dma_buf(client, (int)mem->vaddr);
 	if (IS_ERR_OR_NULL(mem->ion_handle)) {
 		pr_err("%s ION import failed\n", __func__);
 		return PTR_ERR(mem->ion_handle);
 	}
 	rc = ion_map_iommu(client, mem->ion_handle, CAMERA_DOMAIN, GEN_POOL,
-		SZ_4K, 0, (unsigned long *)&mem->phyaddr, &len, UNCACHED, 0);
+		SZ_4K, 0, (unsigned long *)&mem->phyaddr, &len, 0, 0);
 	if (rc < 0)
 		ion_free(client, mem->ion_handle);
+
+	vaddr = ion_map_kernel(client, mem->ion_handle);
+	if (IS_ERR_OR_NULL(vaddr)) {
+		pr_err("%s: could not get virtual address\n", __func__);
+		return 0;
+	}
+	mem->arm_vaddr = vaddr;
+	D("arm_vaddr=0x%lx\n", (unsigned long) mem->arm_vaddr);
 #elif CONFIG_ANDROID_PMEM
 	rc = get_pmem_file((int)mem->vaddr, (unsigned long *)&mem->phyaddr,
 					&kvstart, &len, &mem->file);
@@ -282,7 +282,7 @@ static int msm_vb2_mem_ops_mmap(void *buf_priv, struct vm_area_struct *vma)
 	D("mem = 0x%x\n", (u32)mem);
 	BUG_ON(!mem);
 	MAGIC_CHECK(mem->magic, MAGIC_PMEM);
-	/* Try to remap memory */
+	
 	size = vma->vm_end - vma->vm_start;
 	size = (size < mem->size) ? size : mem->size;
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
@@ -343,6 +343,8 @@ unsigned long videobuf2_to_pmem_contig(struct vb2_buffer *vb,
 	mem = vb2_plane_cookie(vb, plane_no);
 	BUG_ON(!mem);
 	MAGIC_CHECK(mem->magic, MAGIC_PMEM);
+	if (!mem->mapped_phyaddr)
+		pr_err("%s mem->mapped_phyaddr is null", __func__);
 	return mem->mapped_phyaddr;
 }
 EXPORT_SYMBOL_GPL(videobuf2_to_pmem_contig);

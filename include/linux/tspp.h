@@ -24,17 +24,28 @@ enum tspp_mode {
 	TSPP_MODE_RAW_NO_SUFFIX
 };
 
+enum tspp_tsif_mode {
+	TSPP_TSIF_MODE_LOOPBACK, /* loopback mode */
+	TSPP_TSIF_MODE_1,        /* without sync */
+	TSPP_TSIF_MODE_2         /* with sync signal */
+};
+
 struct tspp_filter {
 	int pid;
 	int mask;
 	enum tspp_mode mode;
-	int priority;	/* 0 - 15 */
+	unsigned int priority;	/* 0 - 15 */
 	int decrypt;
 	enum tspp_source source;
 };
 
 struct tspp_select_source {
 	enum tspp_source source;
+	enum tspp_tsif_mode mode;
+	int clk_inverse;
+	int data_inverse;
+	int sync_inverse;
+	int enable_inverse;
 };
 
 struct tspp_pid {
@@ -77,8 +88,7 @@ struct tspp_buffer {
 	_IOW(TSPP_IOCTL_BASE, 5, struct tspp_system_keys)
 #define TSPP_IOCTL_BUFFER_SIZE		\
 	_IOW(TSPP_IOCTL_BASE, 6, struct tspp_buffer)
-#define TSPP_IOCTL_LOOPBACK			\
-	_IOW(TSPP_IOCTL_BASE, 0xFF, int)
-
+#define TSPP_IOCTL_CLOSE_STREAM		\
+	_IO(TSPP_IOCTL_BASE, 7)
 
 #endif /* _TSPP_H_ */

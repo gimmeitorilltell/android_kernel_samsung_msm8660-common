@@ -420,12 +420,10 @@ static int usb_chg_plugged_in(struct pm8921_bms_chip *chip)
 	int val = pm8921_is_usb_chg_plugged_in();
 
 	/* if the charger driver was not initialized, use the restart reason */
-
 	if (val == -EINVAL) {
 		if (pm8xxx_restart_reason(chip->dev->parent)
 				== PM8XXX_RESTART_CHG)
 			val = 1;
-
 		else
 			val = 0;
 	}
@@ -3179,18 +3177,18 @@ static int64_t read_battery_id(struct pm8921_bms_chip *chip)
 static int set_battery_data(struct pm8921_bms_chip *chip)
 {
 	int64_t battery_id;
-#if 0
+
 	if (chip->batt_type == BATT_DESAY)
 		goto desay;
 	else if (chip->batt_type == BATT_PALLADIUM)
 		goto palladium;
-#endif
+
 	battery_id = read_battery_id(chip);
 	if (battery_id < 0) {
 		pr_err("cannot read battery id err = %lld\n", battery_id);
 		return battery_id;
 	}
-#if 0
+
 	if (is_between(PALLADIUM_ID_MIN, PALLADIUM_ID_MAX, battery_id)) {
 		goto palladium;
 	} else if (is_between(DESAY_5200_ID_MIN, DESAY_5200_ID_MAX,
@@ -3201,7 +3199,7 @@ static int set_battery_data(struct pm8921_bms_chip *chip)
 				battery_id);
 		goto palladium;
 	}
-#endif
+
 palladium:
 		chip->fcc = palladium_1500_data.fcc;
 		chip->fcc_temp_lut = palladium_1500_data.fcc_temp_lut;
@@ -3215,7 +3213,6 @@ palladium:
 		chip->rbatt_capacitive_mohm
 			= palladium_1500_data.rbatt_capacitive_mohm;
 		return 0;
-#if 0
 desay:
 		chip->fcc = desay_5200_data.fcc;
 		chip->fcc_temp_lut = desay_5200_data.fcc_temp_lut;
@@ -3227,7 +3224,6 @@ desay:
 		chip->rbatt_capacitive_mohm
 			= desay_5200_data.rbatt_capacitive_mohm;
 		return 0;
-#endif
 }
 
 enum bms_request_operation {

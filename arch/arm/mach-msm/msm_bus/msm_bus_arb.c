@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -9,6 +9,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+
+#define pr_fmt(fmt) "AXI: %s(): " fmt, __func__
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -220,7 +223,7 @@ static int getpath(int src, int dest)
 		list_for_each_entry(fabnodeinfo, gateways, list) {
 		/* see if the destination is at a connected fabric */
 			if (_dst == (fabnodeinfo->info->node_info->priv_id /
-				FABRIC_ID_KEY) && !(fabdev->visited)) {
+				FABRIC_ID_KEY)) {
 				/* Found the fab on which the device exists */
 				info = fabnodeinfo->info;
 				trynextgw = false;
@@ -459,7 +462,7 @@ uint32_t msm_bus_scale_register_client(struct msm_bus_scale_pdata *pdata)
 	deffab = msm_bus_get_fabric_device(MSM_BUS_FAB_DEFAULT);
 	if (!deffab) {
 		MSM_BUS_ERR("Error finding default fabric\n");
-		return -ENXIO;
+		return 0;
 	}
 
 	nfab = msm_bus_get_num_fab();
@@ -559,7 +562,7 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 	int pnode, src, curr, ctx;
 	uint64_t req_clk, req_bw, curr_clk, curr_bw;
 	struct msm_bus_client *client = (struct msm_bus_client *)cl;
-	if (IS_ERR(client)) {
+	if (IS_ERR_OR_NULL(client)) {
 		MSM_BUS_ERR("msm_bus_scale_client update req error %d\n",
 				(uint32_t)client);
 		return -ENXIO;
@@ -571,6 +574,10 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 
 	curr = client->curr;
 	pdata = client->pdata;
+	if (!pdata) {
+		MSM_BUS_ERR("Null pdata passed to update-request\n");
+		return -ENXIO;
+	}
 
 	if (index >= pdata->num_usecases) {
 		MSM_BUS_ERR("Client %u passed invalid index: %d\n",
@@ -609,6 +616,15 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 			curr_clk = client->pdata->usecase[curr].vectors[i].ib;
 			curr_bw = client->pdata->usecase[curr].vectors[i].ab;
 			MSM_BUS_DBG("ab: %llu ib: %llu\n", curr_bw, curr_clk);
+		}
+
+		if (index == 0) {
+			/* This check protects the bus driver from clients
+			 * that can leave non-zero requests after
+			 * unregistering.
+			 * */
+			req_clk = 0;
+			req_bw = 0;
 		}
 
 		if (!pdata->active_only) {
@@ -706,7 +722,7 @@ void msm_bus_scale_client_reset_pnodes(uint32_t cl)
 {
 	int i, src, pnode, index;
 	struct msm_bus_client *client = (struct msm_bus_client *)(cl);
-	if (IS_ERR(client)) {
+	if (IS_ERR_OR_NULL(client)) {
 		MSM_BUS_ERR("msm_bus_scale_reset_pnodes error\n");
 		return;
 	}
@@ -727,7 +743,7 @@ void msm_bus_scale_client_reset_pnodes(uint32_t cl)
 void msm_bus_scale_unregister_client(uint32_t cl)
 {
 	struct msm_bus_client *client = (struct msm_bus_client *)(cl);
-	if (IS_ERR(client) || (!client))
+	if (IS_ERR_OR_NULL(client))
 		return;
 	if (client->curr != 0)
 		msm_bus_scale_client_update_request(cl, 0);

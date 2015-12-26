@@ -29,17 +29,22 @@
 #include <sound/control.h>
 #include <sound/q6adm.h>
 #include <asm/dma.h>
+#include <linux/memory_alloc.h>
+#include <mach/msm_subsystem_map.h>
 #include "msm-pcm-afe.h"
 #include "msm-pcm-q6.h"
 
+
 #define MIN_PERIOD_SIZE (128 * 2)
 #define MAX_PERIOD_SIZE (128 * 2 * 2 * 6)
+
 static struct snd_pcm_hardware msm_afe_hardware = {
 	.info =			(SNDRV_PCM_INFO_MMAP |
 				SNDRV_PCM_INFO_BLOCK_TRANSFER |
 				SNDRV_PCM_INFO_MMAP_VALID |
 				SNDRV_PCM_INFO_INTERLEAVED),
-	.formats =              SNDRV_PCM_FMTBIT_S16_LE,
+	.formats =              SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S24_LE,
 	.rates =                (SNDRV_PCM_RATE_8000 |
 				SNDRV_PCM_RATE_16000 |
 				SNDRV_PCM_RATE_48000),
@@ -47,11 +52,11 @@ static struct snd_pcm_hardware msm_afe_hardware = {
 	.rate_max =             48000,
 	.channels_min =         1,
 	.channels_max =         2,
-	.buffer_bytes_max =     MAX_PERIOD_SIZE * 32,
+	.buffer_bytes_max =     MAX_PERIOD_SIZE * 64,
 	.period_bytes_min =     MIN_PERIOD_SIZE,
 	.period_bytes_max =     MAX_PERIOD_SIZE,
-	.periods_min =          32,
-	.periods_max =          384,
+	.periods_min =          64,
+	.periods_max =          768,
 	.fifo_size =            0,
 };
 static enum hrtimer_restart afe_hrtimer_callback(struct hrtimer *hrt);
@@ -68,7 +73,6 @@ static enum hrtimer_restart afe_hrtimer_callback(struct hrtimer *hrt)
 	struct snd_pcm_substream *substream = prtd->substream;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	if (prtd->start) {
-		snd_pcm_period_elapsed(prtd->substream);
 		pr_debug("sending frame to DSP: poll_time: %d\n",
 				prtd->poll_time);
 		if (prtd->dsp_cnt == runtime->periods)
@@ -79,10 +83,6 @@ static enum hrtimer_restart afe_hrtimer_callback(struct hrtimer *hrt)
 				snd_pcm_lib_period_bytes(prtd->substream))),
 				snd_pcm_lib_period_bytes(prtd->substream));
 		prtd->dsp_cnt++;
-		prtd->poll_time = ((unsigned long)((
-				snd_pcm_lib_period_bytes(prtd->substream)
-				 * 1000 * 1000)/(runtime->rate
-				* runtime->channels * 2)));
 		hrtimer_forward_now(hrt, ns_to_ktime(prtd->poll_time
 					* 1000));
 
@@ -104,10 +104,6 @@ static enum hrtimer_restart afe_hrtimer_rec_callback(struct hrtimer *hrt)
 			* snd_pcm_lib_period_bytes(prtd->substream))),
 			snd_pcm_lib_period_bytes(prtd->substream));
 		prtd->dsp_cnt++;
-		prtd->poll_time = ((unsigned long)((
-				snd_pcm_lib_period_bytes(prtd->substream)
-					* 1000 * 1000)/(runtime->rate
-					* runtime->channels * 2)));
 		pr_debug("sending frame rec to DSP: poll_time: %d\n",
 				prtd->poll_time);
 		hrtimer_forward_now(hrt, ns_to_ktime(prtd->poll_time
@@ -145,11 +141,8 @@ static void pcm_afe_process_tx_pkt(uint32_t opcode,
 						1000 * 1000)/
 						(runtime->rate *
 						runtime->channels * 2)));
-				pr_info("prtd->poll_time: %d",
+				pr_debug("prtd->poll_time: %d",
 						prtd->poll_time);
-				hrtimer_start(&prtd->hrt,
-				ns_to_ktime(prtd->poll_time * 1000),
-				      HRTIMER_MODE_REL);
 				break;
 			}
 			case AFE_EVENT_RTPORT_STOP:
@@ -174,6 +167,7 @@ static void pcm_afe_process_tx_pkt(uint32_t opcode,
 			pr_debug("write done\n");
 			prtd->pcm_irq_pos += snd_pcm_lib_period_bytes
 							(prtd->substream);
+			snd_pcm_period_elapsed(prtd->substream);
 			break;
 		default:
 			break;
@@ -212,10 +206,7 @@ static void pcm_afe_process_rx_pkt(uint32_t opcode,
 				snd_pcm_lib_period_bytes(prtd->substream)
 					* 1000 * 1000)/(runtime->rate
 					* runtime->channels * 2)));
-			hrtimer_start(&prtd->hrt,
-			ns_to_ktime(prtd->poll_time * 1000),
-			      HRTIMER_MODE_REL);
-			pr_info("prtd->poll_time : %d", prtd->poll_time);
+			pr_debug("prtd->poll_time : %d", prtd->poll_time);
 			break;
 		}
 		case AFE_EVENT_RTPORT_STOP:
@@ -270,7 +261,7 @@ static int msm_afe_playback_prepare(struct snd_pcm_substream *substream)
 		pr_err("afe-pcm:register for events failed\n");
 		return ret;
 	}
-	pr_info("%s:success\n", __func__);
+	pr_debug("%s:success\n", __func__);
 	prtd->prepared++;
 	return ret;
 }
@@ -292,7 +283,7 @@ static int msm_afe_capture_prepare(struct snd_pcm_substream *substream)
 		pr_err("afe-pcm:register for events failed\n");
 		return ret;
 	}
-	pr_info("%s:success\n", __func__);
+	pr_debug("%s:success\n", __func__);
 	prtd->prepared++;
 	return 0;
 }
@@ -334,8 +325,8 @@ static int msm_afe_open(struct snd_pcm_substream *substream)
 				(app_cb)q6asm_event_handler, prtd);
 	if (!prtd->audio_client) {
 		pr_debug("%s: Could not allocate memory\n", __func__);
-		kfree(prtd);
 		mutex_unlock(&prtd->lock);
+		kfree(prtd);
 		return -ENOMEM;
 	}
 	hrtimer_init(&prtd->hrt, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -408,8 +399,8 @@ static int msm_afe_close(struct snd_pcm_substream *substream)
 	}
 
 	if (dma_buf->area) {
-		dma_buf->area = NULL;
-	}
+			dma_buf->area = NULL;
+		}
 
 	q6asm_audio_client_buf_free_contiguous(dir,
 				prtd->audio_client);
@@ -444,6 +435,7 @@ static int msm_afe_mmap(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct pcm_afe_info *prtd = runtime->private_data;
 	int result = 0;
+
 	pr_debug("%s\n", __func__);
 	prtd->mmap_flag = 1;
 	if (runtime->dma_addr && runtime->dma_bytes) {
@@ -470,6 +462,8 @@ static int msm_afe_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		pr_debug("%s: SNDRV_PCM_TRIGGER_START\n", __func__);
 		prtd->start = 1;
+		hrtimer_start(&prtd->hrt, ns_to_ktime(0),
+					HRTIMER_MODE_REL);
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
@@ -504,8 +498,7 @@ static int msm_afe_hw_params(struct snd_pcm_substream *substream,
 			runtime->hw.period_bytes_min,
 			runtime->hw.periods_max);
 	if (ret < 0) {
-		pr_err("Audio Start: Buffer Allocation failed \
-					rc = %d\n", ret);
+		pr_err("Audio Start: Buffer Allocation failed rc = %d\n", ret);
 		mutex_unlock(&prtd->lock);
 		return -ENOMEM;
 	}
@@ -570,7 +563,7 @@ static int msm_asoc_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	struct snd_card *card = rtd->card->snd_card;
 	int ret = 0;
 
-	pr_err("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	if (!card->dev->coherent_dma_mask)
 		card->dev->coherent_dma_mask = DMA_BIT_MASK(32);
 	return ret;
@@ -578,7 +571,7 @@ static int msm_asoc_pcm_new(struct snd_soc_pcm_runtime *rtd)
 
 static int msm_afe_afe_probe(struct snd_soc_platform *platform)
 {
-	pr_err("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	return 0;
 }
 
@@ -590,14 +583,14 @@ static struct snd_soc_platform_driver msm_soc_platform = {
 
 static __devinit int msm_afe_probe(struct platform_device *pdev)
 {
-	pr_info("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
+	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
 	return snd_soc_register_platform(&pdev->dev,
 				   &msm_soc_platform);
 }
 
 static int msm_afe_remove(struct platform_device *pdev)
 {
-	pr_err("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	snd_soc_unregister_platform(&pdev->dev);
 	return 0;
 }
@@ -613,14 +606,14 @@ static struct platform_driver msm_afe_driver = {
 
 static int __init msm_soc_platform_init(void)
 {
-	pr_err("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	return platform_driver_register(&msm_afe_driver);
 }
 module_init(msm_soc_platform_init);
 
 static void __exit msm_soc_platform_exit(void)
 {
-	pr_err("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	platform_driver_unregister(&msm_afe_driver);
 }
 module_exit(msm_soc_platform_exit);

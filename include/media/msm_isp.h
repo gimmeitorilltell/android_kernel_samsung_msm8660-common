@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,7 +15,6 @@
 
 #define BIT(nr)			(1UL << (nr))
 
-/* ISP message IDs */
 #define MSG_ID_RESET_ACK                0
 #define MSG_ID_START_ACK                1
 #define MSG_ID_STOP_ACK                 2
@@ -59,8 +58,14 @@
 #define MSG_ID_OUTPUT_PRIMARY           40
 #define MSG_ID_OUTPUT_SECONDARY         41
 #define MSG_ID_STATS_COMPOSITE          42
+#define MSG_ID_HDR_SOF_ACK              43 
+#define MSG_ID_STATS_BG                 44
+#define MSG_ID_STATS_BF                 45
+#define MSG_ID_STATS_BHIST              46
+#define MSG_ID_STOP_LS_ACK              47
+#define MSG_ID_OUTPUT_TERTIARY1         48
+#define MSG_ID_RDI0_UPDATE_ACK          49
 
-/* ISP command IDs */
 #define VFE_CMD_DUMMY_0                                 0
 #define VFE_CMD_SET_CLK                                 1
 #define VFE_CMD_RESET                                   2
@@ -199,6 +204,18 @@
 #define VFE_CMD_SCALE_OUTPUT2_CONFIG                    135
 #define VFE_CMD_CAPTURE_RAW                             136
 #define VFE_CMD_STOP_LIVESHOT                           137
+#define VFE_CMD_RECONFIG_VFE                            138
+#define VFE_CMD_STATS_BG_START                          139
+#define VFE_CMD_STATS_BG_STOP                           140
+#define VFE_CMD_STATS_BF_START                          141
+#define VFE_CMD_STATS_BF_STOP                           142
+#define VFE_CMD_STATS_BHIST_START                       143
+#define VFE_CMD_STATS_BHIST_STOP                        144
+#define VFE_CMD_SET_BAYER_ENABLE                        145
+#define VFE_CMD_SET_CAMERA_MODE                         146 
+#define VFE_CMD_SET_SW_SHARPNESS_CMD                    147
+#define VFE_CMD_START_RDI0                              148
+#define VFE_CMD_STOP_RDI0                               149
 
 struct msm_isp_cmd {
 	int32_t  id;
@@ -221,16 +238,15 @@ struct msm_isp_cmd {
 #define VPE_CMD_ZOOM                                    13
 #define VPE_CMD_MAX                                     14
 
-#define MSM_PP_CMD_TYPE_NOT_USED        0  /* not used */
-#define MSM_PP_CMD_TYPE_VPE             1  /* VPE cmd */
-#define MSM_PP_CMD_TYPE_MCTL            2  /* MCTL cmd */
+#define MSM_PP_CMD_TYPE_NOT_USED        0  
+#define MSM_PP_CMD_TYPE_VPE             1  
+#define MSM_PP_CMD_TYPE_MCTL            2  
 
-#define MCTL_CMD_DUMMY_0                0  /* not used */
-#define MCTL_CMD_GET_FRAME_BUFFER       1  /* reserve a free frame buffer */
-#define MCTL_CMD_PUT_FRAME_BUFFER       2  /* return the free frame buffer */
-#define MCTL_CMD_DIVERT_FRAME_PP_PATH   3  /* divert frame for pp */
+#define MCTL_CMD_DUMMY_0                0  
+#define MCTL_CMD_GET_FRAME_BUFFER       1  
+#define MCTL_CMD_PUT_FRAME_BUFFER       2  
+#define MCTL_CMD_DIVERT_FRAME_PP_PATH   3  
 
-/* event typese sending to MCTL PP module */
 #define MCTL_PP_EVENT_NOTUSED           0
 #define MCTL_PP_EVENT_CMD_ACK           1
 
@@ -311,7 +327,7 @@ struct msm_mctl_pp_frame_cmd {
 	uint32_t dest_buf_handle;
 	struct msm_pp_crop crop;
 	int path;
-	/* TBD: 3D related */
+	
 };
 
 #define VFE_OUTPUTS_MAIN_AND_PREVIEW	BIT(0)
@@ -325,6 +341,7 @@ struct msm_mctl_pp_frame_cmd {
 #define VFE_OUTPUTS_RAW			BIT(8)
 #define VFE_OUTPUTS_JPEG_AND_THUMB	BIT(9)
 #define VFE_OUTPUTS_THUMB_AND_JPEG	BIT(10)
+#define VFE_OUTPUTS_RDI0		BIT(11)
 
-#endif /*__MSM_ISP_H__*/
+#endif 
 

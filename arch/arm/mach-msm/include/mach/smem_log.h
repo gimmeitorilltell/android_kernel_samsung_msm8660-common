@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2009, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2009, 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,6 +37,7 @@
 #define SMEM_LOG_PROC_ID_MODEM          0x00000000
 #define SMEM_LOG_PROC_ID_Q6             0x40000000
 #define SMEM_LOG_PROC_ID_APPS           0x80000000
+#define SMEM_LOG_PROC_ID_WCNSS          0xC0000000
 
 #define SMEM_LOG_CONT                   0x10000000
 
@@ -50,6 +51,9 @@
 #define SMEM_LOG_DCVS_EVENT_BASE        0x00070000
 #define SMEM_LOG_SLEEP_EVENT_BASE       0x00080000
 #define SMEM_LOG_RPC_ROUTER_EVENT_BASE  0x00090000
+#define SMEM_LOG_IPC_ROUTER_EVENT_BASE  0x000D0000
+#define SMEM_LOG_QMI_CCI_EVENT_BASE     0x000E0000
+#define SMEM_LOG_QMI_CSI_EVENT_BASE     0x000F0000
 #if defined(CONFIG_MSM_N_WAY_SMSM)
 #define DEM_SMSM_ISR                    (SMEM_LOG_DEM_EVENT_BASE + 0x1)
 #define DEM_STATE_CHANGE                (SMEM_LOG_DEM_EVENT_BASE + 0x2)

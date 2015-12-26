@@ -37,14 +37,15 @@
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/prom.h>
+#include <asm/setup.h>
 
 #if defined(CONFIG_SERIAL_SUNSAB_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
 #define SUPPORT_SYSRQ
 #endif
 
 #include <linux/serial_core.h>
+#include <linux/sunserialcore.h>
 
-#include "suncore.h"
 #include "sunsab.h"
 
 struct uart_sunsab_port {
@@ -155,6 +156,15 @@ receive_chars(struct uart_sunsab_port *up,
 	if ((stat->sreg.isr1 & SAB82532_ISR1_BRK) &&
 	    (up->port.line == up->port.cons->index))
 		saw_console_brk = 1;
+
+	if (count == 0) {
+		if (unlikely(stat->sreg.isr1 & SAB82532_ISR1_BRK)) {
+			stat->sreg.isr0 &= ~(SAB82532_ISR0_PERR |
+					     SAB82532_ISR0_FERR);
+			up->port.icount.brk++;
+			uart_handle_break(&up->port);
+		}
+	}
 
 	for (i = 0; i < count; i++) {
 		unsigned char ch = buf[i], flag;

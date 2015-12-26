@@ -13,7 +13,7 @@
  *
  *	Added conditional policy language extensions
  *
- * Updated: Hewlett-Packard <paul.moore@hp.com>
+ * Updated: Hewlett-Packard <paul@paul-moore.com>
  *
  *      Added support for the policy capability bitmap
  *
@@ -1392,23 +1392,6 @@ static int class_read(struct policydb *p, struct hashtab *h, void *fp)
 		cladatum->default_type = le32_to_cpu(buf[0]);
 	}
 
-	if (p->policyvers >= POLICYDB_VERSION_NEW_OBJECT_DEFAULTS) {
-		rc = next_entry(buf, fp, sizeof(u32) * 3);
-		if (rc)
-			goto bad;
-
-		cladatum->default_user = le32_to_cpu(buf[0]);
-		cladatum->default_role = le32_to_cpu(buf[1]);
-		cladatum->default_range = le32_to_cpu(buf[2]);
-	}
-
-	if (p->policyvers >= POLICYDB_VERSION_DEFAULT_TYPE) {
-		rc = next_entry(buf, fp, sizeof(u32) * 1);
-		if (rc)
-			goto bad;
-		cladatum->default_type = le32_to_cpu(buf[0]);
-	}
-
 	rc = hashtab_insert(h, key, cladatum);
 	if (rc)
 		goto bad;
@@ -1846,8 +1829,6 @@ static int policydb_bounds_sanity_check(struct policydb *p)
 	return 0;
 }
 
-extern int ss_initialized;
-
 u16 string_to_security_class(struct policydb *p, const char *name)
 {
 	struct class_datum *cladatum;
@@ -2019,7 +2000,19 @@ static int filename_trans_read(struct policydb *p, void *fp)
 		if (rc)
 			goto out;
 
-		hashtab_insert(p->filename_trans, ft, otype);
+		rc = hashtab_insert(p->filename_trans, ft, otype);
+		if (rc) {
+			/*
+			 * Do not return -EEXIST to the caller, or the system
+			 * will not boot.
+			 */
+			if (rc != -EEXIST)
+				goto out;
+			/* But free memory to avoid memory leak. */
+			kfree(ft);
+			kfree(name);
+			kfree(otype);
+		}
 	}
 	hash_eval(p->filename_trans, "filenametr");
 	return 0;
@@ -3348,10 +3341,10 @@ static int filename_write_helper(void *key, void *data, void *ptr)
 	if (rc)
 		return rc;
 
-	buf[0] = ft->stype;
-	buf[1] = ft->ttype;
-	buf[2] = ft->tclass;
-	buf[3] = otype->otype;
+	buf[0] = cpu_to_le32(ft->stype);
+	buf[1] = cpu_to_le32(ft->ttype);
+	buf[2] = cpu_to_le32(ft->tclass);
+	buf[3] = cpu_to_le32(otype->otype);
 
 	rc = put_entry(buf, sizeof(u32), 4, fp);
 	if (rc)

@@ -385,7 +385,7 @@ static const struct das08_board_struct das08_boards[] = {
 	 .ai = das08_ai_rinsn,
 	 .ai_nbits = 16,
 	 .ai_pg = das08_pg_none,
-	 .ai_encoding = das08_encode12,
+	 .ai_encoding = das08_encode16,
 	 .ao = das08jr_ao_winsn,
 	 .ao_nbits = 16,
 	 .di = das08jr_di_rbits,
@@ -506,10 +506,8 @@ struct das08_board_struct das08_cs_boards[NUM_DAS08_CS_BOARDS] = {
 
 #ifdef CONFIG_COMEDI_PCI
 static DEFINE_PCI_DEVICE_TABLE(das08_pci_table) = {
-	{
-	PCI_VENDOR_ID_COMPUTERBOARDS, PCI_DEVICE_ID_PCIDAS08,
-		    PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0}, {
-	0}
+	{ PCI_DEVICE(PCI_VENDOR_ID_COMPUTERBOARDS, PCI_DEVICE_ID_PCIDAS08) },
+	{0}
 };
 
 MODULE_DEVICE_TABLE(pci, das08_pci_table);

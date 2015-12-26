@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2011, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@
 #include <linux/mfd/marimba.h>
 #include <linux/slab.h>
 #include <linux/debugfs.h>
+#include <linux/module.h>
 
 #define MARIMBA_MODE				0x00
 
@@ -75,12 +76,16 @@ int marimba_read_bahama_ver(struct marimba *marimba)
 	rc = marimba_read_bit_mask(marimba, 0x00,  &bahama_version, 1, 0x1F);
 	if (rc < 0)
 		return rc;
+	pr_debug("%s: Bahama version: 0x%x\n", __func__, bahama_version);
 	switch (bahama_version) {
 	case 0x08: /* varient of bahama v1 */
 	case 0x10:
 	case 0x00:
 		return BAHAMA_VER_1_0;
 	case 0x09: /* variant of bahama v2 */
+	case 0x0a: /* variant of bahama v2.1 */
+	/* Falling through because initialization */
+	/* and configuration for 2.0 and 2.1 are same */
 		return BAHAMA_VER_2_0;
 	default:
 		return BAHAMA_VER_UNSUPPORTED;
@@ -169,6 +174,11 @@ int marimba_write_bit_mask(struct marimba *marimba, u8 reg, u8 *value,
 	u8 mask_value[num_bytes];
 
 	marimba = &marimba_modules[marimba->mod_id];
+	if (marimba == NULL) {
+		pr_err("%s: Unable to access Marimba core\n", __func__);
+		return -ENODEV;
+	}
+
 
 	mutex_lock(&marimba->xfer_lock);
 
@@ -177,6 +187,12 @@ int marimba_write_bit_mask(struct marimba *marimba, u8 reg, u8 *value,
 					& ~mask) | (value[i] & mask);
 
 	msg = &marimba->xfer_msg[0];
+	if (marimba->client == NULL) {
+		pr_err("%s: Unable to access the Marimba slave device.\n",
+								__func__);
+		return -ENODEV;
+	}
+
 	msg->addr = marimba->client->addr;
 	msg->flags = 0;
 	msg->len = num_bytes + 1;
@@ -197,9 +213,11 @@ int marimba_write_bit_mask(struct marimba *marimba, u8 reg, u8 *value,
 							= mask_value[i];
 	} else {
 		dev_err(&marimba->client->dev, "i2c write failed\n");
+		ret = -ENODEV;
 	}
 
 	mutex_unlock(&marimba->xfer_lock);
+
 	return ret;
 }
 EXPORT_SYMBOL(marimba_write_bit_mask);
@@ -408,26 +426,6 @@ static int marimba_add_child(struct marimba_platform_data *pdata,
 #endif
 	return 0;
 }
-/* qualcomm patch begins */
-
-
-int timpani_reset(void)
-{
-	struct marimba *marimba = &marimba_modules[MARIMBA_SLAVE_ID_MARIMBA];
-	struct marimba_platform_data *pdata = marimba_pdata;
-	int rc = 0;
-	u8 buf[1];
-
-	buf[0] = 0x10;
-
-	mutex_lock(&marimba->xfer_lock);
-		rc = pdata->timpani_reset_config();
-	mutex_unlock(&marimba->xfer_lock);
-	marimba_write(marimba, MARIMBA_MODE, buf, 1);
-	return rc;
-}
-EXPORT_SYMBOL(timpani_reset);
-/* Qualcomm patch ends */
 
 int marimba_gpio_config(int gpio_value)
 {
@@ -766,7 +764,7 @@ static void marimba_init_reg(struct i2c_client *client, u8 driver_data)
 	}
 }
 
-static int marimba_probe(struct i2c_client *client,
+static int __devinit marimba_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)
 {
 	struct marimba_platform_data *pdata = client->dev.platform_data;
@@ -875,9 +873,7 @@ static int marimba_probe(struct i2c_client *client,
 
 	status = marimba_add_child(pdata, id->driver_data);
 
-//	marimba_pdata = pdata;
-	if (client->addr == 0xD) /* need to keep reset pointer only for timpani */
-		marimba_pdata = pdata;
+	marimba_pdata = pdata;
 
 	return 0;
 
@@ -911,6 +907,7 @@ static int __devexit marimba_remove(struct i2c_client *client)
 }
 
 static struct i2c_device_id marimba_id_table[] = {
+	{"marimba", MARIMBA_ID},
 	{"timpani", TIMPANI_ID},
 	{}
 };

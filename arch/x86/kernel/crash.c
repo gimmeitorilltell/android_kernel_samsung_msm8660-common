@@ -32,14 +32,11 @@ int in_crash_kexec;
 
 #if defined(CONFIG_SMP) && defined(CONFIG_X86_LOCAL_APIC)
 
-static void kdump_nmi_callback(int cpu, struct die_args *args)
+static void kdump_nmi_callback(int cpu, struct pt_regs *regs)
 {
-	struct pt_regs *regs;
 #ifdef CONFIG_X86_32
 	struct pt_regs fixed_regs;
 #endif
-
-	regs = args->regs;
 
 #ifdef CONFIG_X86_32
 	if (!user_mode_vm(regs)) {
@@ -98,10 +95,10 @@ void native_machine_crash_shutdown(struct pt_regs *regs)
 	cpu_emergency_vmxoff();
 	cpu_emergency_svm_disable();
 
-	lapic_shutdown();
 #if defined(CONFIG_X86_IO_APIC)
 	disable_IO_APIC();
 #endif
+	lapic_shutdown();
 #ifdef CONFIG_HPET_TIMER
 	hpet_disable();
 #endif

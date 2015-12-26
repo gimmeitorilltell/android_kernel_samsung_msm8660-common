@@ -105,6 +105,7 @@ static void send_disable_event(struct work_struct *worker)
 	skb = alloc_skb(len, GFP_ATOMIC);
 	if (!skb) {
 		FMDERR("Memory not allocated for the socket");
+		kfree(worker);
 		return;
 	}
 
@@ -153,7 +154,13 @@ static int radio_hci_smd_register_dev(struct radio_data *hsmd)
 	struct radio_hci_dev *hdev;
 	int rc;
 
+	if (hsmd == NULL)
+		return -ENODEV;
+
 	hdev = kmalloc(sizeof(struct radio_hci_dev), GFP_KERNEL);
+	if (hdev == NULL)
+		return -ENODEV;
+
 	hsmd->hdev = hdev;
 	tasklet_init(&hsmd->rx_task, radio_hci_smd_recv_event,
 		(unsigned long) hsmd);
@@ -166,6 +173,8 @@ static int radio_hci_smd_register_dev(struct radio_data *hsmd)
 
 	if (rc < 0) {
 		FMDERR("Cannot open the command channel");
+		hsmd->hdev = NULL;
+		kfree(hdev);
 		return -ENODEV;
 	}
 
@@ -173,6 +182,9 @@ static int radio_hci_smd_register_dev(struct radio_data *hsmd)
 
 	if (radio_hci_register_dev(hdev) < 0) {
 		FMDERR("Can't register HCI device");
+		smd_close(hsmd->fm_channel);
+		hsmd->hdev = NULL;
+		kfree(hdev);
 		return -ENODEV;
 	}
 
@@ -185,7 +197,8 @@ static void radio_hci_smd_deregister(void)
 	hs.fm_channel = 0;
 }
 
-static int radio_hci_smd_init(void)
+#ifdef MODULE
+static int __init radio_hci_smd_init(void)
 {
 	return radio_hci_smd_register_dev(&hs);
 }
@@ -196,6 +209,26 @@ static void __exit radio_hci_smd_exit(void)
 	radio_hci_smd_deregister();
 }
 module_exit(radio_hci_smd_exit);
+
+int hci_fm_smd_register(void)
+{
+	return 0;
+}
+
+void hci_fm_smd_deregister(void)
+{
+}
+#else
+int hci_fm_smd_register(void)
+{
+	return radio_hci_smd_register_dev(&hs);
+}
+
+void hci_fm_smd_deregister(void)
+{
+	radio_hci_smd_deregister();
+}
+#endif
 
 MODULE_DESCRIPTION("Bluetooth SMD driver");
 MODULE_AUTHOR("Ankur Nandwani <ankurn@codeaurora.org>");

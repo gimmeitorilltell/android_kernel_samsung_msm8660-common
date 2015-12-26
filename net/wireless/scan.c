@@ -18,7 +18,7 @@
 #include "nl80211.h"
 #include "wext-compat.h"
 
-#define IEEE80211_SCAN_RESULT_EXPIRE	(6 * HZ)
+#define IEEE80211_SCAN_RESULT_EXPIRE	(3 * HZ)
 
 void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev, bool leak)
 {
@@ -133,18 +133,17 @@ EXPORT_SYMBOL(cfg80211_sched_scan_stopped);
 int __cfg80211_stop_sched_scan(struct cfg80211_registered_device *rdev,
 			       bool driver_initiated)
 {
-	int err;
 	struct net_device *dev;
 
 	lockdep_assert_held(&rdev->sched_scan_mtx);
 
 	if (!rdev->sched_scan_req)
-		return 0;
+		return -ENOENT;
 
 	dev = rdev->sched_scan_req->dev;
 
 	if (!driver_initiated) {
-		err = rdev->ops->sched_scan_stop(&rdev->wiphy, dev);
+		int err = rdev->ops->sched_scan_stop(&rdev->wiphy, dev);
 		if (err)
 			return err;
 	}
@@ -154,7 +153,7 @@ int __cfg80211_stop_sched_scan(struct cfg80211_registered_device *rdev,
 	kfree(rdev->sched_scan_req);
 	rdev->sched_scan_req = NULL;
 
-	return err;
+	return 0;
 }
 
 static void bss_release(struct kref *ref)
@@ -361,12 +360,9 @@ static int cmp_bss_core(struct cfg80211_bss *a,
 {
 	int r;
 
-#if !(defined(CONFIG_BCM4339) || defined(CONFIG_BCM4339_MODULE) \
-	|| defined(CONFIG_BCM4335) || defined(CONFIG_BCM4335_MODULE) \
-	|| defined(CONFIG_BCM4354) || defined(CONFIG_BCM4354_MODULE))
 	if (a->channel != b->channel)
 		return b->channel->center_freq - a->channel->center_freq;
-#endif /* CONFIG_BCM4335 || CONFIG_BCM4339 || CONFIG_BCM4354 */
+
 	if (is_mesh_bss(a) && is_mesh_bss(b)) {
 		r = cmp_ies(WLAN_EID_MESH_ID,
 			    a->information_elements,
@@ -382,16 +378,7 @@ static int cmp_bss_core(struct cfg80211_bss *a,
 			       b->len_information_elements);
 	}
 
-	r = memcmp(a->bssid, b->bssid, ETH_ALEN);
-#if (defined(CONFIG_BCM4339) || defined(CONFIG_BCM4339_MODULE) \
-	|| defined(CONFIG_BCM4335) || defined(CONFIG_BCM4335_MODULE) \
-	|| defined(CONFIG_BCM4354) || defined(CONFIG_BCM4354_MODULE))
-	if (r)
-		return r;
-	if (a->channel != b->channel)
-		return b->channel->center_freq - a->channel->center_freq;
-#endif /* CONFIG_BCM4335 || CONFIG_BCM4339 || CONFIG_BCM4354 */
-	return r;
+	return memcmp(a->bssid, b->bssid, ETH_ALEN);
 }
 
 static int cmp_bss(struct cfg80211_bss *a,
@@ -1027,9 +1014,12 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 		if (wreq->scan_type == IW_SCAN_TYPE_PASSIVE)
 			creq->n_ssids = 0;
 	}
-
 	for (i = 0; i < IEEE80211_NUM_BANDS; i++)
 		creq->rates[i] = (1 << wiphy->bands[i]->n_bitrates) - 1;
+
+	for (i = 0; i < IEEE80211_NUM_BANDS; i++)
+		if (wiphy->bands[i])
+			creq->rates[i] = (1 << wiphy->bands[i]->n_bitrates) - 1;
 
 	rdev->scan_req = creq;
 	err = rdev->ops->scan(wiphy, dev, creq);

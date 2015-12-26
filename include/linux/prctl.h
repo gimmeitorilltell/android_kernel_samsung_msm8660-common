@@ -103,6 +103,31 @@
 #define PR_MCE_KILL_GET 34
 
 /*
+ * Tune up process memory map specifics.
+ */
+#define PR_SET_MM		35
+# define PR_SET_MM_START_CODE		1
+# define PR_SET_MM_END_CODE		2
+# define PR_SET_MM_START_DATA		3
+# define PR_SET_MM_END_DATA		4
+# define PR_SET_MM_START_STACK		5
+# define PR_SET_MM_START_BRK		6
+# define PR_SET_MM_BRK			7
+
+/*
+ * Set specific pid that is allowed to ptrace the current task.
+ * A value of 0 mean "no process".
+ */
+#define PR_SET_PTRACER 0x59616d61
+# define PR_SET_PTRACER_ANY ((unsigned long)-1)
+
+#define PR_SET_CHILD_SUBREAPER 36
+#define PR_GET_CHILD_SUBREAPER 37
+
+#define PR_SET_VMA		0x53564d41
+# define PR_SET_VMA_ANON_NAME		0
+
+/*
  * If no_new_privs is set, then operations that grant new privileges (i.e.
  * execve) will either fail or not grant them.  This affects suid/sgid,
  * file capabilities, and LSMs.
@@ -114,7 +139,7 @@
  * asking selinux for a specific new context (e.g. with runcon) will result
  * in execve returning -EPERM.
  */
-#define PR_SET_NO_NEW_PRIVS 36
-#define PR_GET_NO_NEW_PRIVS 37
+#define PR_SET_NO_NEW_PRIVS 38
+#define PR_GET_NO_NEW_PRIVS 39
 
 #endif /* _LINUX_PRCTL_H */

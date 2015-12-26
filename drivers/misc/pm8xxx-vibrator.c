@@ -175,6 +175,13 @@ static void pm8xxx_vib_update(struct work_struct *work)
 	pm8xxx_vib_set(vib, vib->state);
 }
 
+int vibrate(int time)
+{
+    pm8xxx_vib_enable(&vib_dev->timed_dev, time);
+    return 0;
+}
+
+
 static int pm8xxx_vib_get_time(struct timed_output_dev *dev)
 {
 	struct pm8xxx_vib *vib = container_of(dev, struct pm8xxx_vib,
@@ -215,6 +222,41 @@ static const struct dev_pm_ops pm8xxx_vib_pm_ops = {
 	.suspend = pm8xxx_vib_suspend,
 };
 #endif
+
+static ssize_t voltage_level_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct timed_output_dev *time_cdev;
+	struct pm8xxx_vib *vib;
+
+	time_cdev = (struct timed_output_dev *) dev_get_drvdata(dev);
+	vib = container_of(time_cdev, struct pm8xxx_vib, timed_dev);
+	return sprintf(buf, "%d\n", vib->level * 100);
+}
+
+static ssize_t voltage_level_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct timed_output_dev *time_cdev;
+	struct pm8xxx_vib *vib;
+	int voltage_input = -1;
+
+	time_cdev = (struct timed_output_dev *) dev_get_drvdata(dev);
+	vib = container_of(time_cdev, struct pm8xxx_vib, timed_dev);
+
+	sscanf(buf, "%d ", &voltage_input);
+	if (voltage_input < VIB_MIN_LEVEL_mV ||
+			voltage_input > VIB_MAX_LEVEL_mV) {
+		pr_err("%s: invalid voltage level input: %d",
+				__func__, voltage_input);
+		return -EINVAL;
+	}
+
+	vib->level = voltage_input / 100;
+	return size;
+}
+static DEVICE_ATTR(voltage_level, S_IRUGO | S_IWUSR, voltage_level_show,
+		voltage_level_store);
 
 static int __devinit pm8xxx_vib_probe(struct platform_device *pdev)
 
@@ -269,6 +311,11 @@ static int __devinit pm8xxx_vib_probe(struct platform_device *pdev)
 	rc = timed_output_dev_register(&vib->timed_dev);
 	if (rc < 0)
 		goto err_read_vib;
+
+	rc = device_create_file(vib->timed_dev.dev, &dev_attr_voltage_level);
+	if (rc < 0) {
+		pr_err("%s: failed to add voltage_level sysfs node", __func__);
+	}
 
 	pm8xxx_vib_enable(&vib->timed_dev, pdata->initial_vibrate_ms);
 

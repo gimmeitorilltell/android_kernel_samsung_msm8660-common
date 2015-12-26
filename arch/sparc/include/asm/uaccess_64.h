@@ -11,7 +11,6 @@
 #include <linux/string.h>
 #include <linux/thread_info.h>
 #include <asm/asi.h>
-#include <asm/system.h>
 #include <asm/spitfire.h>
 #include <asm-generic/uaccess-unaligned.h>
 #endif
@@ -267,8 +266,8 @@ extern long __strnlen_user(const char __user *, long len);
 
 #define strlen_user __strlen_user
 #define strnlen_user __strnlen_user
-#define __copy_to_user_inatomic ___copy_to_user
-#define __copy_from_user_inatomic ___copy_from_user
+#define __copy_to_user_inatomic __copy_to_user
+#define __copy_from_user_inatomic __copy_from_user
 
 #endif  /* __ASSEMBLY__ */
 

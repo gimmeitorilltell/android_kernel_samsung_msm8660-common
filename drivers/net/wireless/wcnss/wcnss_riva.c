@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -44,6 +44,9 @@ static DEFINE_SEMAPHORE(riva_power_on_lock);
 #define RIVA_PMU_CFG_IRIS_XO_MODE         0x6
 #define RIVA_PMU_CFG_IRIS_XO_MODE_48      (3 << 1)
 
+#define RIVA_SPARE_OUT              (msm_riva_base + 0x0b4)
+#define NVBIN_DLND_BIT              BIT(25)
+
 #define VREG_NULL_CONFIG            0x0000
 #define VREG_GET_REGULATOR_MASK     0x0001
 #define VREG_SET_VOLTAGE_MASK       0x0002
@@ -63,8 +66,8 @@ struct vregs_info {
 static struct vregs_info iris_vregs[] = {
 	{"iris_vddxo",  VREG_NULL_CONFIG, 1800000, 0, 1800000, 10000,  NULL},
 	{"iris_vddrfa", VREG_NULL_CONFIG, 1300000, 0, 1300000, 100000, NULL},
-	{"iris_vddpa",  VREG_NULL_CONFIG, 3000000, 0, 3000000, 515000, NULL},
-	{"iris_vdddig", VREG_NULL_CONFIG, 0000000, 0, 0000000, 0,      NULL},
+	{"iris_vddpa",  VREG_NULL_CONFIG, 2900000, 0, 3000000, 515000, NULL},
+	{"iris_vdddig", VREG_NULL_CONFIG, 1200000, 0, 1225000, 10000,  NULL},
 };
 
 static struct vregs_info riva_vregs[] = {
@@ -102,6 +105,14 @@ static int configure_iris_xo(struct device *dev, bool use_48mhz_xo, int on)
 			pr_err("cxo enable failed\n");
 			goto fail;
 		}
+		/* NV bit is set to indicate that platform driver is capable
+		 * of doing NV download.
+		 */
+		pr_debug("wcnss: Indicate NV bin download\n");
+		reg = readl_relaxed(RIVA_SPARE_OUT);
+		reg |= NVBIN_DLND_BIT;
+		writel_relaxed(reg, RIVA_SPARE_OUT);
+
 		writel_relaxed(0, RIVA_PMU_CFG);
 		reg = readl_relaxed(RIVA_PMU_CFG);
 		reg |= RIVA_PMU_CFG_GC_BUS_MUX_SEL_TOP |
@@ -135,15 +146,15 @@ static int configure_iris_xo(struct device *dev, bool use_48mhz_xo, int on)
 			wlan_clock = msm_xo_get(MSM_XO_TCXO_A2, id);
 			if (IS_ERR(wlan_clock)) {
 				rc = PTR_ERR(wlan_clock);
-				pr_err("Failed to get MSM_XO_TCXO_A2 voter"
-							" (%d)\n", rc);
+				pr_err("Failed to get MSM_XO_TCXO_A2 voter (%d)\n",
+					rc);
 				goto fail;
 			}
 
 			rc = msm_xo_mode_vote(wlan_clock, MSM_XO_MODE_ON);
 			if (rc < 0) {
-				pr_err("Configuring MSM_XO_MODE_ON failed"
-							" (%d)\n", rc);
+				pr_err("Configuring MSM_XO_MODE_ON failed (%d)\n",
+					rc);
 				goto msm_xo_vote_fail;
 			}
 		}
@@ -151,8 +162,8 @@ static int configure_iris_xo(struct device *dev, bool use_48mhz_xo, int on)
 		if (wlan_clock != NULL && !use_48mhz_xo) {
 			rc = msm_xo_mode_vote(wlan_clock, MSM_XO_MODE_OFF);
 			if (rc < 0)
-				pr_err("Configuring MSM_XO_MODE_OFF failed"
-							" (%d)\n", rc);
+				pr_err("Configuring MSM_XO_MODE_OFF failed (%d)\n",
+					rc);
 		}
 	}
 
@@ -219,7 +230,7 @@ static void wcnss_vregs_off(struct vregs_info regulators[], uint size)
 static int wcnss_vregs_on(struct device *dev,
 		struct vregs_info regulators[], uint size)
 {
-	int i, rc = 0;
+	int i, rc = 0, reg_cnt;
 
 	for (i = 0; i < size; i++) {
 			/* Get regulator source */
@@ -232,9 +243,10 @@ static int wcnss_vregs_on(struct device *dev,
 				goto fail;
 		}
 		regulators[i].state |= VREG_GET_REGULATOR_MASK;
-
+		reg_cnt = regulator_count_voltages(regulators[i].regulator);
 		/* Set voltage to nominal. Exclude swtiches e.g. LVS */
-		if (regulators[i].nominal_min || regulators[i].max_voltage) {
+		if ((regulators[i].nominal_min || regulators[i].max_voltage)
+				&& (reg_cnt > 0)) {
 			rc = regulator_set_voltage(regulators[i].regulator,
 					regulators[i].nominal_min,
 					regulators[i].max_voltage);
@@ -247,7 +259,7 @@ static int wcnss_vregs_on(struct device *dev,
 		}
 
 		/* Vote for PWM/PFM mode if needed */
-		if (regulators[i].uA_load) {
+		if (regulators[i].uA_load && (reg_cnt > 0)) {
 			rc = regulator_set_optimum_mode(regulators[i].regulator,
 					regulators[i].uA_load);
 			if (rc < 0) {
@@ -358,7 +370,11 @@ int req_riva_power_on_lock(char *driver_name)
 	node = kmalloc(sizeof(struct host_driver), GFP_KERNEL);
 	if (!node)
 		goto err;
-	strncpy(node->name, driver_name, sizeof(node->name));
+	if (strlcpy(node->name, driver_name, sizeof(node->name))
+			>= sizeof(node->name)) {
+		kfree(node);
+		goto err;
+	}
 
 	mutex_lock(&list_lock);
 	/* Lock when the first request is added */

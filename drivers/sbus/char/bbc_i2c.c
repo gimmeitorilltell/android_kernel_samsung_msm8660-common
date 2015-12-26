@@ -233,13 +233,9 @@ int bbc_i2c_write_buf(struct bbc_i2c_client *client,
 	int ret = 0;
 
 	while (len > 0) {
-		int err = bbc_i2c_writeb(client, *buf, off);
-
-		if (err < 0) {
-			ret = err;
+		ret = bbc_i2c_writeb(client, *buf, off);
+		if (ret < 0)
 			break;
-		}
-
 		len--;
 		buf++;
 		off++;
@@ -253,11 +249,9 @@ int bbc_i2c_read_buf(struct bbc_i2c_client *client,
 	int ret = 0;
 
 	while (len > 0) {
-		int err = bbc_i2c_readb(client, buf, off);
-		if (err < 0) {
-			ret = err;
+		ret = bbc_i2c_readb(client, buf, off);
+		if (ret < 0)
 			break;
-		}
 		len--;
 		buf++;
 		off++;
@@ -307,13 +301,18 @@ static struct bbc_i2c_bus * __init attach_one_i2c(struct platform_device *op, in
 	if (!bp)
 		return NULL;
 
+	INIT_LIST_HEAD(&bp->temps);
+	INIT_LIST_HEAD(&bp->fans);
+
 	bp->i2c_control_regs = of_ioremap(&op->resource[0], 0, 0x2, "bbc_i2c_regs");
 	if (!bp->i2c_control_regs)
 		goto fail;
 
-	bp->i2c_bussel_reg = of_ioremap(&op->resource[1], 0, 0x1, "bbc_i2c_bussel");
-	if (!bp->i2c_bussel_reg)
-		goto fail;
+	if (op->num_resources == 2) {
+		bp->i2c_bussel_reg = of_ioremap(&op->resource[1], 0, 0x1, "bbc_i2c_bussel");
+		if (!bp->i2c_bussel_reg)
+			goto fail;
+	}
 
 	bp->waiting = 0;
 	init_waitqueue_head(&bp->wq);
@@ -422,17 +421,6 @@ static struct platform_driver bbc_i2c_driver = {
 	.remove		= __devexit_p(bbc_i2c_remove),
 };
 
-static int __init bbc_i2c_init(void)
-{
-	return platform_driver_register(&bbc_i2c_driver);
-}
-
-static void __exit bbc_i2c_exit(void)
-{
-	platform_driver_unregister(&bbc_i2c_driver);
-}
-
-module_init(bbc_i2c_init);
-module_exit(bbc_i2c_exit);
+module_platform_driver(bbc_i2c_driver);
 
 MODULE_LICENSE("GPL");

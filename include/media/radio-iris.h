@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2011-2012 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2013 The Linux Foundation. All rights reserved.
  *
  * This file is based on include/net/bluetooth/hci_core.h
  *
@@ -31,6 +31,51 @@
 #include <linux/interrupt.h>
 #include <linux/mutex.h>
 #include <linux/atomic.h>
+#include "radio-iris-commands.h"
+#define MIN_TX_TONE_VAL 0x00
+#define MAX_TX_TONE_VAL 0x07
+#define MIN_HARD_MUTE_VAL 0x00
+#define MAX_HARD_MUTE_VAL 0x03
+#define MIN_SRCH_MODE 0x00
+#define MAX_SRCH_MODE 0x09
+#define MIN_SCAN_DWELL 0x00
+#define MAX_SCAN_DWELL 0x0F
+#define MIN_SIG_TH 0x00
+#define MAX_SIG_TH 0x03
+#define MIN_PTY 0X00
+#define MAX_PTY 0x1F
+#define MIN_PI 0x0000
+#define MAX_PI 0xFFFF
+#define MIN_SRCH_STATIONS_CNT 0x00
+#define MAX_SRCH_STATIONS_CNT 0x14
+#define MIN_CHAN_SPACING 0x00
+#define MAX_CHAN_SPACING 0x02
+#define MIN_EMPHASIS 0x00
+#define MAX_EMPHASIS 0x01
+#define MIN_RDS_STD 0x00
+#define MAX_RDS_STD 0x02
+#define MIN_ANTENNA_VAL 0x00
+#define MAX_ANTENNA_VAL 0x01
+#define MIN_TX_PS_REPEAT_CNT 0x01
+#define MAX_TX_PS_REPEAT_CNT 0x0F
+#define MIN_SOFT_MUTE 0x00
+#define MAX_SOFT_MUTE 0x01
+#define MIN_PEEK_ACCESS_LEN 0x01
+#define MAX_PEEK_ACCESS_LEN 0xF9
+#define MIN_RESET_CNTR 0x00
+#define MAX_RESET_CNTR 0x01
+#define MIN_HLSI 0x00
+#define MAX_HLSI 0x02
+#define MIN_NOTCH_FILTER 0x00
+#define MAX_NOTCH_FILTER 0x02
+#define MIN_INTF_DET_OUT_LW_TH 0x00
+#define MAX_INTF_DET_OUT_LW_TH 0xFF
+#define MIN_INTF_DET_OUT_HG_TH 0x00
+#define MAX_INTF_DET_OUT_HG_TH 0xFF
+#define MIN_SINR_TH -128
+#define MAX_SINR_TH 127
+#define MIN_SINR_SAMPLES 0x01
+#define MAX_SINR_SAMPLES 0xFF
 
 /* ---- HCI Packet structures ---- */
 #define RADIO_HCI_COMMAND_HDR_SIZE sizeof(struct radio_hci_command_hdr)
@@ -44,7 +89,41 @@
 /* default data access */
 #define DEFAULT_DATA_OFFSET 2
 #define DEFAULT_DATA_SIZE 249
+/* Power levels are 0-7, but SOC will expect values from 0-255
+ * So the each level step size will be 255/7 = 36 */
+#define FM_TX_PWR_LVL_STEP_SIZE 36
+#define FM_TX_PWR_LVL_0         0 /* Lowest power lvl that can be set for Tx */
+#define FM_TX_PWR_LVL_MAX       7 /* Max power lvl for Tx */
+#define FM_TX_PHY_CFG_MODE   0x3c
+#define FM_TX_PHY_CFG_LEN    0x10
+#define FM_TX_PWR_GAIN_OFFSET 14
+/**RDS CONFIG MODE**/
+#define FM_RDS_CNFG_MODE	0x0f
+#define FM_RDS_CNFG_LEN		0x10
+#define AF_RMSSI_TH_LSB_OFFSET	10
+#define AF_RMSSI_TH_MSB_OFFSET	11
+#define AF_RMSSI_SAMPLES_OFFSET	15
+/**RX CONFIG MODE**/
+#define FM_RX_CONFG_MODE	0x15
+#define FM_RX_CNFG_LEN		0x20
+#define GD_CH_RMSSI_TH_OFFSET	12
+#define MAX_GD_CH_RMSSI_TH	127
+#define SRCH_ALGO_TYPE_OFFSET  25
+#define SINRFIRSTSTAGE_OFFSET  26
+#define RMSSIFIRSTSTAGE_OFFSET 27
+#define CF0TH12_BYTE1_OFFSET   8
+#define CF0TH12_BYTE2_OFFSET   9
+#define CF0TH12_BYTE3_OFFSET   10
+#define CF0TH12_BYTE4_OFFSET   11
+#define MAX_SINR_FIRSTSTAGE	127
+#define MAX_RMSSI_FIRSTSTAGE	127
+#define RDS_PS0_XFR_MODE 0x01
+#define RDS_PS0_LEN 6
+#define RX_REPEATE_BYTE_OFFSET 5
 
+#define FM_AF_LIST_MAX_SIZE   200
+#define AF_LIST_MAX     (FM_AF_LIST_MAX_SIZE / 4) /* Each AF frequency consist
+							of sizeof(int) bytes */
 /* HCI timeouts */
 #define RADIO_HCI_TIMEOUT	(10000)	/* 10 seconds */
 
@@ -203,8 +282,9 @@ void radio_hci_event_packet(struct radio_hci_dev *hdev, struct sk_buff *skb);
 #define HCI_FM_GET_DET_CH_TH_CMD 16
 
 /* Defines for FM TX*/
-#define TX_PS_DATA_LENGTH 96
+#define TX_PS_DATA_LENGTH 108
 #define TX_RT_DATA_LENGTH 64
+#define PS_STRING_LEN     9
 
 /* ----- HCI Command request ----- */
 struct hci_fm_recv_conf_req {
@@ -231,7 +311,7 @@ struct hci_fm_tx_ps {
 	__u16	pi;
 	__u8	pty;
 	__u8	ps_repeatcount;
-	__u8	ps_len;
+	__u8	ps_num;
 	__u8    ps_data[TX_PS_DATA_LENGTH];
 } __packed;
 
@@ -239,7 +319,7 @@ struct hci_fm_tx_rt {
 	__u8    rt_control;
 	__u16	pi;
 	__u8	pty;
-	__u8	ps_len;
+	__u8	rt_len;
 	__u8    rt_data[TX_RT_DATA_LENGTH];
 } __packed;
 
@@ -355,6 +435,53 @@ struct hci_fm_ch_det_threshold {
 #define HCI_REQ_CANCELED  2
 #define HCI_REQ_STATUS    3
 
+#define MAX_RAW_RDS_GRPS	21
+
+#define RDSGRP_DATA_OFFSET	 0x1
+
+/*RT PLUS*/
+#define DUMMY_CLASS		0
+#define RT_PLUS_LEN_1_TAG	3
+#define RT_ERT_FLAG_BIT		5
+
+/*TAG1*/
+#define TAG1_MSB_OFFSET		3
+#define TAG1_MSB_MASK		7
+#define TAG1_LSB_OFFSET		5
+#define TAG1_POS_MSB_MASK	31
+#define TAG1_POS_MSB_OFFSET	1
+#define TAG1_POS_LSB_OFFSET	7
+#define TAG1_LEN_OFFSET		1
+#define TAG1_LEN_MASK		63
+
+/*TAG2*/
+#define TAG2_MSB_OFFSET		5
+#define TAG2_MSB_MASK		1
+#define TAG2_LSB_OFFSET		3
+#define TAG2_POS_MSB_MASK	7
+#define TAG2_POS_MSB_OFFSET	3
+#define TAG2_POS_LSB_OFFSET	5
+#define TAG2_LEN_MASK		31
+
+#define AGT_MASK		31
+/*Extract 5 left most bits of lsb of 2nd block*/
+#define AGT(x)			(x & AGT_MASK)
+/*16 bits of 4th block*/
+#define AID(lsb, msb)		((msb << 8) | (lsb))
+/*Extract 5 right most bits of msb of 2nd block*/
+#define GTC(blk2msb)		(blk2msb >> 3)
+
+#define GRP_3A			0x6
+#define RT_PLUS_AID		0x4bd7
+
+/*ERT*/
+#define ERT_AID			0x6552
+#define CARRIAGE_RETURN		0x000D
+#define MAX_ERT_SEGMENT		31
+#define ERT_FORMAT_DIR_BIT	1
+
+#define EXTRACT_BIT(data, bit_pos) ((data & (1 << bit_pos)) >> bit_pos)
+
 struct hci_ev_tune_status {
 	__u8    sub_event;
 	__le32  station_freq;
@@ -367,9 +494,19 @@ struct hci_ev_tune_status {
 	__u8	intf_det_th;
 } __packed;
 
+struct rds_blk_data {
+	__u8	rdsMsb;
+	__u8	rdsLsb;
+	__u8	blockStatus;
+} __packed;
+
+struct rds_grp_data {
+	struct rds_blk_data rdsBlk[4];
+} __packed;
+
 struct hci_ev_rds_rx_data {
 	__u8    num_rds_grps;
-	__u8    rds_grp_data[12];
+	struct  rds_grp_data rds_grp_data[MAX_RAW_RDS_GRPS];
 } __packed;
 
 struct hci_ev_prg_service {
@@ -395,7 +532,7 @@ struct hci_ev_af_list {
 	__le32   tune_freq;
 	__le16   pi_code;
 	__u8    af_size;
-	__u8    af_list[25];
+	__u8    af_list[FM_AF_LIST_MAX_SIZE];
 } __packed;
 
 struct hci_ev_cmd_complete {
@@ -482,6 +619,29 @@ struct hci_fm_dbg_param_rsp {
 	__u8    in_det_out;
 } __packed;
 
+#define CLKSPURID_INDEX0	0
+#define CLKSPURID_INDEX1	5
+#define CLKSPURID_INDEX2	10
+#define CLKSPURID_INDEX3	15
+#define CLKSPURID_INDEX4	20
+#define CLKSPURID_INDEX5	25
+
+#define MAX_SPUR_FREQ_LIMIT	30
+#define CKK_SPUR		0x3B
+#define SPUR_DATA_SIZE		0x4
+#define SPUR_ENTRIES_PER_ID	0x5
+
+#define COMPUTE_SPUR(val)         ((((val) - (76000)) / (50)))
+#define GET_FREQ(val, bit)        ((bit == 1) ? ((val) >> 8) : ((val) & 0xFF))
+#define GET_SPUR_ENTRY_LEVEL(val) ((val) / (5))
+
+struct hci_fm_spur_data {
+	__u32	freq[MAX_SPUR_FREQ_LIMIT];
+	__s8	rmssi[MAX_SPUR_FREQ_LIMIT];
+	__u8	enable[MAX_SPUR_FREQ_LIMIT];
+} __packed;
+
+
 /* HCI dev events */
 #define RADIO_HCI_DEV_REG			1
 #define RADIO_HCI_DEV_WRITE			2
@@ -502,6 +662,7 @@ struct hci_fm_dbg_param_rsp {
 #define PI_CODE_OFFSET 4
 #define AF_SIZE_OFFSET 6
 #define AF_LIST_OFFSET 7
+#define RT_A_B_FLAG_OFFSET 4
 /*FM states*/
 
 enum radio_state_t {
@@ -509,91 +670,13 @@ enum radio_state_t {
 	FM_RECV,
 	FM_TRANS,
 	FM_RESET,
-	FM_CALIB
+	FM_CALIB,
+	FM_TURNING_OFF,
+	FM_RECV_TURNING_ON,
+	FM_TRANS_TURNING_ON,
+	FM_MAX_NO_STATES,
 };
 
-enum v4l2_cid_private_iris_t {
-	V4L2_CID_PRIVATE_IRIS_SRCHMODE = (0x08000000 + 1),
-	V4L2_CID_PRIVATE_IRIS_SCANDWELL,
-	V4L2_CID_PRIVATE_IRIS_SRCHON,
-	V4L2_CID_PRIVATE_IRIS_STATE,
-	V4L2_CID_PRIVATE_IRIS_TRANSMIT_MODE,
-	V4L2_CID_PRIVATE_IRIS_RDSGROUP_MASK,
-	V4L2_CID_PRIVATE_IRIS_REGION,
-	V4L2_CID_PRIVATE_IRIS_SIGNAL_TH,
-	V4L2_CID_PRIVATE_IRIS_SRCH_PTY,
-	V4L2_CID_PRIVATE_IRIS_SRCH_PI,
-	V4L2_CID_PRIVATE_IRIS_SRCH_CNT,
-	V4L2_CID_PRIVATE_IRIS_EMPHASIS,
-	V4L2_CID_PRIVATE_IRIS_RDS_STD,
-	V4L2_CID_PRIVATE_IRIS_SPACING,
-	V4L2_CID_PRIVATE_IRIS_RDSON,
-	V4L2_CID_PRIVATE_IRIS_RDSGROUP_PROC,
-	V4L2_CID_PRIVATE_IRIS_LP_MODE,
-	V4L2_CID_PRIVATE_IRIS_ANTENNA,
-	V4L2_CID_PRIVATE_IRIS_RDSD_BUF,
-	V4L2_CID_PRIVATE_IRIS_PSALL,  /*0x8000014*/
-
-	/*v4l2 Tx controls*/
-	V4L2_CID_PRIVATE_IRIS_TX_SETPSREPEATCOUNT,
-	V4L2_CID_PRIVATE_IRIS_STOP_RDS_TX_PS_NAME,
-	V4L2_CID_PRIVATE_IRIS_STOP_RDS_TX_RT,
-	V4L2_CID_PRIVATE_IRIS_IOVERC,
-	V4L2_CID_PRIVATE_IRIS_INTDET,
-	V4L2_CID_PRIVATE_IRIS_MPX_DCC,
-	V4L2_CID_PRIVATE_IRIS_AF_JUMP,
-	V4L2_CID_PRIVATE_IRIS_RSSI_DELTA,
-	V4L2_CID_PRIVATE_IRIS_HLSI, /*0x800001d*/
-
-	/*Diagnostic commands*/
-	V4L2_CID_PRIVATE_IRIS_SOFT_MUTE,
-	V4L2_CID_PRIVATE_IRIS_RIVA_ACCS_ADDR,
-	V4L2_CID_PRIVATE_IRIS_RIVA_ACCS_LEN,
-	V4L2_CID_PRIVATE_IRIS_RIVA_PEEK,
-	V4L2_CID_PRIVATE_IRIS_RIVA_POKE,
-	V4L2_CID_PRIVATE_IRIS_SSBI_ACCS_ADDR,
-	V4L2_CID_PRIVATE_IRIS_SSBI_PEEK,
-	V4L2_CID_PRIVATE_IRIS_SSBI_POKE,
-	V4L2_CID_PRIVATE_IRIS_TX_TONE,
-	V4L2_CID_PRIVATE_IRIS_RDS_GRP_COUNTERS,
-	V4L2_CID_PRIVATE_IRIS_SET_NOTCH_FILTER, /* 0x8000028 */
-	V4L2_CID_PRIVATE_IRIS_SET_AUDIO_PATH, /* TAVARUA specific command */
-	V4L2_CID_PRIVATE_IRIS_DO_CALIBRATION,
-	V4L2_CID_PRIVATE_IRIS_SRCH_ALGORITHM, /* TAVARUA specific command */
-	V4L2_CID_PRIVATE_IRIS_GET_SINR,
-	V4L2_CID_PRIVATE_INTF_LOW_THRESHOLD,
-	V4L2_CID_PRIVATE_INTF_HIGH_THRESHOLD,
-	V4L2_CID_PRIVATE_SINR_THRESHOLD,
-	V4L2_CID_PRIVATE_SINR_SAMPLES,
-
-	/*using private CIDs under userclass*/
-	V4L2_CID_PRIVATE_IRIS_READ_DEFAULT = 0x00980928,
-	V4L2_CID_PRIVATE_IRIS_WRITE_DEFAULT,
-	V4L2_CID_PRIVATE_IRIS_SET_CALIBRATION,
-};
-
-
-enum iris_evt_t {
-	IRIS_EVT_RADIO_READY,
-	IRIS_EVT_TUNE_SUCC,
-	IRIS_EVT_SEEK_COMPLETE,
-	IRIS_EVT_SCAN_NEXT,
-	IRIS_EVT_NEW_RAW_RDS,
-	IRIS_EVT_NEW_RT_RDS,
-	IRIS_EVT_NEW_PS_RDS,
-	IRIS_EVT_ERROR,
-	IRIS_EVT_BELOW_TH,
-	IRIS_EVT_ABOVE_TH,
-	IRIS_EVT_STEREO,
-	IRIS_EVT_MONO,
-	IRIS_EVT_RDS_AVAIL,
-	IRIS_EVT_RDS_NOT_AVAIL,
-	IRIS_EVT_NEW_SRCH_LIST,
-	IRIS_EVT_NEW_AF_LIST,
-	IRIS_EVT_TXRDSDAT,
-	IRIS_EVT_TXRDSDONE,
-	IRIS_EVT_RADIO_DISABLED
-};
 enum emphasis_type {
 	FM_RX_EMP75 = 0x0,
 	FM_RX_EMP50 = 0x1
@@ -624,7 +707,7 @@ enum iris_region_t {
 	IRIS_REGION_OTHER
 };
 
-#define STD_BUF_SIZE        (64)
+#define STD_BUF_SIZE        (256)
 
 enum iris_buf_t {
 	IRIS_BUF_SRCH_LIST,
@@ -638,7 +721,9 @@ enum iris_buf_t {
 	IRIS_BUF_RDS_CNTRS,
 	IRIS_BUF_RD_DEFAULT,
 	IRIS_BUF_CAL_DATA,
-	IRIS_BUF_MAX
+	IRIS_BUF_RT_PLUS,
+	IRIS_BUF_ERT,
+	IRIS_BUF_MAX,
 };
 
 enum iris_xfr_t {
@@ -673,6 +758,14 @@ enum search_t {
 	RDS_AF_JUMP,
 };
 
+enum spur_entry_levels {
+	ENTRY_0,
+	ENTRY_1,
+	ENTRY_2,
+	ENTRY_3,
+	ENTRY_4,
+	ENTRY_5,
+};
 
 /* Band limits */
 #define REGION_US_EU_BAND_LOW              87500
@@ -702,7 +795,7 @@ enum search_t {
 /* constants */
 #define  RDS_BLOCKS_NUM	(4)
 #define BYTES_PER_BLOCK	(3)
-#define MAX_PS_LENGTH	(96)
+#define MAX_PS_LENGTH	(108)
 #define MAX_RT_LENGTH	(64)
 #define RDS_GRP_CNTR_LEN (36)
 #define RX_RT_DATA_LENGTH (63)
@@ -744,6 +837,11 @@ enum search_t {
 #define CALIB_DATA_OFSET  2
 #define CALIB_MODE_OFSET  1
 #define MAX_CALIB_SIZE 75
+
+/* Channel validity */
+#define INVALID_CHANNEL		(0)
+#define VALID_CHANNEL		(1)
+
 struct hci_fm_set_cal_req_proc {
 	__u8    mode;
 	/*Max process calibration data size*/
@@ -767,11 +865,219 @@ struct hci_cc_do_calibration_rsp {
 #define RDS_SYNC_INTR   (1 << 1)
 #define AUDIO_CTRL_INTR (1 << 2)
 #define AF_JUMP_ENABLE  (1 << 4)
+
 int hci_def_data_read(struct hci_fm_def_data_rd_req *arg,
 	struct radio_hci_dev *hdev);
 int hci_def_data_write(struct hci_fm_def_data_wr_req *arg,
 	struct radio_hci_dev *hdev);
 int hci_fm_do_calibration(__u8 *arg, struct radio_hci_dev *hdev);
 int hci_fm_do_calibration(__u8 *arg, struct radio_hci_dev *hdev);
+int hci_fm_smd_register(void);
+void hci_fm_smd_deregister(void);
 
+static inline int is_valid_tone(int tone)
+{
+	if ((tone >= MIN_TX_TONE_VAL) &&
+		(tone <= MAX_TX_TONE_VAL))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_hard_mute(int hard_mute)
+{
+	if ((hard_mute >= MIN_HARD_MUTE_VAL) &&
+		(hard_mute <= MAX_HARD_MUTE_VAL))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_srch_mode(int srch_mode)
+{
+	if ((srch_mode >= MIN_SRCH_MODE) &&
+		(srch_mode <= MAX_SRCH_MODE))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_scan_dwell_prd(int scan_dwell_prd)
+{
+	if ((scan_dwell_prd >= MIN_SCAN_DWELL) &&
+		(scan_dwell_prd <= MAX_SCAN_DWELL))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_sig_th(int sig_th)
+{
+	if ((sig_th >= MIN_SIG_TH) &&
+		(sig_th <= MAX_SIG_TH))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_pty(int pty)
+{
+	if ((pty >= MIN_PTY) &&
+		(pty <= MAX_PTY))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_pi(int pi)
+{
+	if ((pi >= MIN_PI) &&
+		(pi <= MAX_PI))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_srch_station_cnt(int cnt)
+{
+	if ((cnt >= MIN_SRCH_STATIONS_CNT) &&
+		(cnt <= MAX_SRCH_STATIONS_CNT))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_chan_spacing(int spacing)
+{
+	if ((spacing >= MIN_CHAN_SPACING) &&
+		(spacing <= MAX_CHAN_SPACING))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_emphasis(int emphasis)
+{
+	if ((emphasis >= MIN_EMPHASIS) &&
+		(emphasis <= MAX_EMPHASIS))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_rds_std(int rds_std)
+{
+	if ((rds_std >= MIN_RDS_STD) &&
+		(rds_std <= MAX_RDS_STD))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_antenna(int antenna_type)
+{
+	if ((antenna_type >= MIN_ANTENNA_VAL) &&
+		(antenna_type <= MAX_ANTENNA_VAL))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_ps_repeat_cnt(int cnt)
+{
+	if ((cnt >= MIN_TX_PS_REPEAT_CNT) &&
+		(cnt <= MAX_TX_PS_REPEAT_CNT))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_soft_mute(int soft_mute)
+{
+	if ((soft_mute >= MIN_SOFT_MUTE) &&
+		(soft_mute <= MAX_SOFT_MUTE))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_peek_len(int len)
+{
+	if ((len >= MIN_PEEK_ACCESS_LEN) &&
+		(len <= MAX_PEEK_ACCESS_LEN))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_reset_cntr(int cntr)
+{
+	if ((cntr >= MIN_RESET_CNTR) &&
+		(cntr <= MAX_RESET_CNTR))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_hlsi(int hlsi)
+{
+	if ((hlsi >= MIN_HLSI) &&
+		(hlsi <= MAX_HLSI))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_notch_filter(int filter)
+{
+	if ((filter >= MIN_NOTCH_FILTER) &&
+		(filter <= MAX_NOTCH_FILTER))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_intf_det_low_th(int th)
+{
+	if ((th >= MIN_INTF_DET_OUT_LW_TH) &&
+		(th <= MAX_INTF_DET_OUT_LW_TH))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_intf_det_hgh_th(int th)
+{
+	if ((th >= MIN_INTF_DET_OUT_HG_TH) &&
+		(th <= MAX_INTF_DET_OUT_HG_TH))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_sinr_th(int th)
+{
+	if ((th >= MIN_SINR_TH) &&
+		(th <= MAX_SINR_TH))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_sinr_samples(int samples_cnt)
+{
+	if ((samples_cnt >= MIN_SINR_SAMPLES) &&
+		(samples_cnt <= MAX_SINR_SAMPLES))
+		return 1;
+	else
+		return 0;
+}
+
+static inline int is_valid_fm_state(int state)
+{
+	if ((state >= 0) && (state < FM_MAX_NO_STATES))
+		return 1;
+	else
+		return 0;
+}
 #endif /* __RADIO_HCI_CORE_H */

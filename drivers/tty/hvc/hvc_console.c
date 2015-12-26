@@ -31,6 +31,7 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/major.h>
+#include <linux/atomic.h>
 #include <linux/sysrq.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
@@ -39,6 +40,7 @@
 #include <linux/delay.h>
 #include <linux/freezer.h>
 #include <linux/slab.h>
+#include <linux/serial_core.h>
 
 #include <asm/uaccess.h>
 
@@ -68,6 +70,9 @@ static struct task_struct *hvc_task;
 
 /* Picks up late kicks after list walk but before schedule() */
 static int hvc_kicked;
+
+/* hvc_init is triggered from hvc_alloc, i.e. only when actually used */
+static atomic_t hvc_needs_init __read_mostly = ATOMIC_INIT(-1);
 
 static int hvc_init(void);
 
@@ -185,8 +190,8 @@ static struct tty_driver *hvc_console_device(struct console *c, int *index)
 	return hvc_driver;
 }
 
-static int __init hvc_console_setup(struct console *co, char *options)
-{
+static int hvc_console_setup(struct console *co, char *options)
+{	
 	if (co->index < 0 || co->index >= MAX_NR_HVC_CONSOLES)
 		return -ENODEV;
 
@@ -387,7 +392,7 @@ static void hvc_close(struct tty_struct *tty, struct file * filp)
 		 * there is no buffered data otherwise sleeps on a wait queue
 		 * waking periodically to check chars_in_buffer().
 		 */
-		tty_wait_until_sent(tty, HVC_CLOSE_WAIT);
+		tty_wait_until_sent_from_close(tty, HVC_CLOSE_WAIT);
 	} else {
 		if (hp->count < 0)
 			printk(KERN_ERR "hvc_close %X: oops, count is %d\n",
@@ -747,6 +752,58 @@ static int khvcd(void *unused)
 	return 0;
 }
 
+static int hvc_tiocmget(struct tty_struct *tty)
+{
+	struct hvc_struct *hp = tty->driver_data;
+
+	if (!hp || !hp->ops->tiocmget)
+		return -EINVAL;
+	return hp->ops->tiocmget(hp);
+}
+
+static int hvc_tiocmset(struct tty_struct *tty,
+			unsigned int set, unsigned int clear)
+{
+	struct hvc_struct *hp = tty->driver_data;
+
+	if (!hp || !hp->ops->tiocmset)
+		return -EINVAL;
+	return hp->ops->tiocmset(hp, set, clear);
+}
+
+#ifdef CONFIG_CONSOLE_POLL
+int hvc_poll_init(struct tty_driver *driver, int line, char *options)
+{
+	return 0;
+}
+
+static int hvc_poll_get_char(struct tty_driver *driver, int line)
+{
+	struct tty_struct *tty = driver->ttys[0];
+	struct hvc_struct *hp = tty->driver_data;
+	int n;
+	char ch;
+
+	n = hp->ops->get_chars(hp->vtermno, &ch, 1);
+
+	if (n == 0)
+		return NO_POLL_CHAR;
+
+	return ch;
+}
+
+static void hvc_poll_put_char(struct tty_driver *driver, int line, char ch)
+{
+	struct tty_struct *tty = driver->ttys[0];
+	struct hvc_struct *hp = tty->driver_data;
+	int n;
+
+	do {
+		n = hp->ops->put_chars(hp->vtermno, &ch, 1);
+	} while (n <= 0);
+}
+#endif
+
 static const struct tty_operations hvc_ops = {
 	.open = hvc_open,
 	.close = hvc_close,
@@ -755,6 +812,13 @@ static const struct tty_operations hvc_ops = {
 	.unthrottle = hvc_unthrottle,
 	.write_room = hvc_write_room,
 	.chars_in_buffer = hvc_chars_in_buffer,
+	.tiocmget = hvc_tiocmget,
+	.tiocmset = hvc_tiocmset,
+#ifdef CONFIG_CONSOLE_POLL
+	.poll_init = hvc_poll_init,
+	.poll_get_char = hvc_poll_get_char,
+	.poll_put_char = hvc_poll_put_char,
+#endif
 };
 
 struct hvc_struct *hvc_alloc(uint32_t vtermno, int data,
@@ -765,7 +829,7 @@ struct hvc_struct *hvc_alloc(uint32_t vtermno, int data,
 	int i;
 
 	/* We wait until a driver actually comes along */
-	if (!hvc_driver) {
+	if (atomic_inc_not_zero(&hvc_needs_init)) {
 		int err = hvc_init();
 		if (err)
 			return ERR_PTR(err);
@@ -857,7 +921,6 @@ static int hvc_init(void)
 		goto out;
 	}
 
-	drv->owner = THIS_MODULE;
 	drv->driver_name = "hvc";
 	drv->name = "hvc";
 	drv->major = HVC_MAJOR;

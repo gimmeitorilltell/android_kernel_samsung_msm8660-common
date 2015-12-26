@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,6 +43,7 @@ extern int scm_call_noalloc(u32 svc_id, u32 cmd_id, const void *cmd_buf,
 
 extern s32 scm_call_atomic1(u32 svc, u32 cmd, u32 arg1);
 extern s32 scm_call_atomic2(u32 svc, u32 cmd, u32 arg1, u32 arg2);
+extern s32 scm_call_atomic3(u32 svc, u32 cmd, u32 arg1, u32 arg2, u32 arg3);
 extern s32 scm_call_atomic4_3(u32 svc, u32 cmd, u32 arg1, u32 arg2, u32 arg3,
 		u32 arg4, u32 *ret1, u32 *ret2);
 
@@ -50,6 +51,7 @@ extern s32 scm_call_atomic4_3(u32 svc, u32 cmd, u32 arg1, u32 arg2, u32 arg3,
 
 extern u32 scm_get_version(void);
 extern int scm_is_call_available(u32 svc_id, u32 cmd_id);
+extern int scm_get_feat_version(u32 feat);
 
 #else
 
@@ -76,6 +78,12 @@ static inline s32 scm_call_atomic2(u32 svc, u32 cmd, u32 arg1, u32 arg2)
 	return 0;
 }
 
+static inline s32 scm_call_atomic3(u32 svc, u32 cmd, u32 arg1, u32 arg2,
+		u32 arg3)
+{
+	return 0;
+}
+
 static inline s32 scm_call_atomic4_3(u32 svc, u32 cmd, u32 arg1, u32 arg2,
 		u32 arg3, u32 arg4, u32 *ret1, u32 *ret2)
 {
@@ -88,6 +96,11 @@ static inline u32 scm_get_version(void)
 }
 
 static inline int scm_is_call_available(u32 svc_id, u32 cmd_id)
+{
+	return 0;
+}
+
+static inline int scm_get_feat_version(u32 feat)
 {
 	return 0;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,6 +13,7 @@
 #ifndef MSM_SENSOR_H
 #define MSM_SENSOR_H
 
+#include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
@@ -27,6 +28,9 @@
 #include <media/v4l2-subdev.h>
 #include "msm_camera_i2c.h"
 #include "msm_camera_eeprom.h"
+#include "../yushanII/ilp0100_ST_definitions.h"
+#include <media/linux_yushanii.h>
+
 #define Q8  0x00000100
 #define Q10 0x00000400
 
@@ -34,14 +38,29 @@
 #define MSM_SENSOR_MCLK_16HZ 16000000
 #define MSM_SENSOR_MCLK_24HZ 24000000
 
+extern uint32_t ois_line;
+
+typedef enum {
+	OTP_VCM_CALIBRATION = 0,
+	OTP_NUM_TYPES
+} OTP_DATA_TYPE;
+typedef enum {
+	OTP_READ_DATA_SUCCESS = 0,
+	OTP_DATA_NOT_READY_ERROR,
+	OTP_READ_DATA_TYPE_ERROR,
+	OTP_READ_DATA_STATUS_NUM
+} OTP_DATA_READ_STATUS;
+int set_VCM_OTP(int type, uint8_t* data, int size);
+int get_VCM_OTP(int type, uint8_t* data, int size);
+
 enum msm_sensor_reg_update {
-	/* Sensor egisters that need to be updated during initialization */
+	
 	MSM_SENSOR_REG_INIT,
-	/* Sensor egisters that needs periodic I2C writes */
+	
 	MSM_SENSOR_UPDATE_PERIODIC,
-	/* All the sensor Registers will be updated */
+	
 	MSM_SENSOR_UPDATE_ALL,
-	/* Not valid update */
+	
 	MSM_SENSOR_UPDATE_INVALID
 };
 
@@ -68,6 +87,8 @@ struct msm_sensor_exp_gain_info_t {
 	uint16_t coarse_int_time_addr;
 	uint16_t global_gain_addr;
 	uint16_t vert_offset;
+	uint16_t min_vert; 
+	uint32_t sensor_max_linecount; 
 };
 
 struct msm_sensor_reg_t {
@@ -76,14 +97,35 @@ struct msm_sensor_reg_t {
 	uint8_t start_stream_conf_size;
 	struct msm_camera_i2c_reg_conf *stop_stream_conf;
 	uint8_t stop_stream_conf_size;
+
+	struct msm_camera_i2c_reg_conf *start_stream_conf_yushanii;
+	uint8_t start_stream_conf_size_yushanii;
+	struct msm_camera_i2c_reg_conf *stop_stream_conf_yushanii;
+	uint8_t stop_stream_conf_size_yushanii;
+
 	struct msm_camera_i2c_reg_conf *group_hold_on_conf;
 	uint8_t group_hold_on_conf_size;
 	struct msm_camera_i2c_reg_conf *group_hold_off_conf;
 	uint8_t group_hold_off_conf_size;
+
+	struct msm_camera_i2c_reg_conf *group_hold_on_conf_hdr;
+	uint8_t group_hold_on_conf_size_hdr;
+	struct msm_camera_i2c_reg_conf *group_hold_off_conf_hdr;
+	uint8_t group_hold_off_conf_size_hdr;
+
 	struct msm_camera_i2c_conf_array *init_settings;
 	uint8_t init_size;
+
+	struct msm_camera_i2c_conf_array *init_settings_yushanii;
+	uint8_t init_size_yushanii;
+
+	struct msm_camera_i2c_conf_array *init_settings_2;
+	uint8_t init_size_2;
+
 	struct msm_camera_i2c_conf_array *mode_settings;
+	struct msm_camera_i2c_conf_array *no_effect_settings;
 	struct msm_sensor_output_info_t *output_settings;
+	struct msm_sensor_output_info_t *output_settings_yushanii;
 	uint8_t num_conf;
 };
 
@@ -111,6 +153,8 @@ struct msm_sensor_fn_t {
 	void (*sensor_stop_stream) (struct msm_sensor_ctrl_t *);
 	void (*sensor_group_hold_on) (struct msm_sensor_ctrl_t *);
 	void (*sensor_group_hold_off) (struct msm_sensor_ctrl_t *);
+	void (*sensor_group_hold_on_hdr) (struct msm_sensor_ctrl_t *);
+	void (*sensor_group_hold_off_hdr) (struct msm_sensor_ctrl_t *);
 
 	int32_t (*sensor_set_fps) (struct msm_sensor_ctrl_t *,
 			struct fps_cfg *);
@@ -118,9 +162,14 @@ struct msm_sensor_fn_t {
 			uint16_t, uint32_t);
 	int32_t (*sensor_write_snapshot_exp_gain) (struct msm_sensor_ctrl_t *,
 			uint16_t, uint32_t);
+	int32_t (*sensor_write_exp_gain_ex) (struct msm_sensor_ctrl_t *,
+			int, uint16_t, uint16_t, uint32_t); 
+	int32_t (*sensor_write_hdr_outdoor_flag) (struct msm_sensor_ctrl_t *, uint8_t); 
+	int32_t (*sensor_write_hdr_exp_gain_ex) (struct msm_sensor_ctrl_t *,
+			int, uint16_t, uint16_t, uint16_t, uint32_t, uint32_t); 
+	int32_t (*sensor_write_snapshot_exp_gain_ex) (struct msm_sensor_ctrl_t *,
+			int, uint16_t, uint16_t, uint32_t); 
 	int32_t (*sensor_setting) (struct msm_sensor_ctrl_t *,
-			int update_type, int rt);
-	int32_t (*sensor_csi_setting) (struct msm_sensor_ctrl_t *,
 			int update_type, int rt);
 	int32_t (*sensor_set_sensor_mode)
 			(struct msm_sensor_ctrl_t *, int, int);
@@ -132,9 +181,34 @@ struct msm_sensor_fn_t {
 	int (*sensor_power_down)
 		(struct msm_sensor_ctrl_t *);
 	int (*sensor_power_up) (struct msm_sensor_ctrl_t *);
-	int32_t (*sensor_match_id)(struct msm_sensor_ctrl_t *s_ctrl);
+	
+	int (*sensor_i2c_read_fuseid)(struct sensor_cfg_data *cdata, struct msm_sensor_ctrl_t *s_ctrl);
+	
+       int (*sensor_i2c_read_vcm_driver_ic)(struct msm_sensor_ctrl_t *s_ctrl);
 	int (*sensor_adjust_frame_lines)
 		(struct msm_sensor_ctrl_t *s_ctrl, uint16_t res);
+
+	int32_t (*sensor_write_hdr_exp_gain) (void *, uint16_t, uint16_t);
+	int32_t (*sensor_set_dig_gain) (struct msm_sensor_ctrl_t *, uint16_t); 
+	int32_t (*sensor_set_hdr_dig_gain) (struct msm_sensor_ctrl_t *, uint16_t, uint16_t); 
+	
+	void (*sensor_ov2722_write_exp_line) (struct msm_sensor_ctrl_t *, uint16_t); 
+
+	int (*sensor_write_output_settings_specific)(struct msm_sensor_ctrl_t *s_ctrl, uint16_t res); 
+	int (*sensor_i2c_read_otp)(struct sensor_cfg_data *cdata, struct msm_sensor_ctrl_t *s_ctrl);
+
+	void (*sensor_yushanii_status_line_modifier2)(uint8_t*);
+	void (*sensor_yushanii_status_line_modifier)(uint16_t*);
+	void (*sensor_yushanii_line_length_pclk_modifier)(uint16_t*);
+	void (*sensor_yushanii_status_line_outputed_modifier)(unsigned char*);
+    void (*sensor_yushanII_set_output_format)(struct msm_sensor_ctrl_t *sensor,int res, Ilp0100_structFrameFormat *output_format);
+	void (*sensor_yushanII_set_parm)(struct msm_sensor_ctrl_t *sensor, int res,Ilp0100_structSensorParams *YushanII_sensor);
+    void (*sensor_yushanII_set_IQ)(struct msm_sensor_ctrl_t *sensor,int*,int*,int*,struct yushanii_cls*);
+	void(*sensor_yushanII_active_hold)(void);
+	int (*sensor_yushanII_ae_updated)(void);
+	void(*sensor_yushanII_set_default_ae)(struct msm_sensor_ctrl_t *, uint8_t);
+	void (*sensor_read_command_line) (struct msm_sensor_ctrl_t *);
+	void (*sensor_set_aec_weighting)(struct msm_sensor_ctrl_t *,struct sensor_cfg_data *cdata);
 };
 
 struct msm_sensor_ctrl_t {
@@ -155,6 +229,9 @@ struct msm_sensor_ctrl_t {
 
 	uint16_t curr_line_length_pclk;
 	uint16_t curr_frame_length_lines;
+	uint16_t prev_gain;
+	uint16_t prev_line;
+	uint16_t prev_dig_gain;
 
 	uint32_t fps_divider;
 	enum msm_sensor_resolution_t curr_res;
@@ -174,19 +251,41 @@ struct msm_sensor_ctrl_t {
 	struct regulator **reg_ptr;
 	struct clk *cam_clk;
 	long clk_rate;
+	int mirror_flip;	
+	struct mutex *sensor_first_mutex;  
+	int hdr_mode;
+	int yushanII_switch_virtual_channel;
+	int adjust_y_output_size;
+	int adjust_frame_length_line;
+	uint8_t driver_ic;
+	bool ews_enable;
+	bool actived_ae;	
+	enum msm_ispif_intftype intf;
+	bool is_black_level_calibration_ongoing;
+	int channel_offset;
+	bool boot_mode_normal;
+	struct task_struct *tsk_sensor_init;
+	int first_init;
 };
 
 void msm_sensor_start_stream(struct msm_sensor_ctrl_t *s_ctrl);
 void msm_sensor_stop_stream(struct msm_sensor_ctrl_t *s_ctrl);
 void msm_sensor_group_hold_on(struct msm_sensor_ctrl_t *s_ctrl);
 void msm_sensor_group_hold_off(struct msm_sensor_ctrl_t *s_ctrl);
-
+void msm_sensor_group_hold_on_hdr(struct msm_sensor_ctrl_t *s_ctrl);
+void msm_sensor_group_hold_off_hdr(struct msm_sensor_ctrl_t *s_ctrl);
 int32_t msm_sensor_set_fps(struct msm_sensor_ctrl_t *s_ctrl,
 			struct fps_cfg   *fps);
 int32_t msm_sensor_write_exp_gain1(struct msm_sensor_ctrl_t *s_ctrl,
 		uint16_t gain, uint32_t line);
 int32_t msm_sensor_write_exp_gain2(struct msm_sensor_ctrl_t *s_ctrl,
 		uint16_t gain, uint32_t line);
+int32_t msm_sensor_write_exp_gain1_ex(struct msm_sensor_ctrl_t *s_ctrl,
+		int mode, uint16_t gain, uint16_t dig_gain, uint32_t line);
+int32_t msm_sensor_write_exp_gain2_ex(struct msm_sensor_ctrl_t *s_ctrl,
+		int mode, uint16_t gain, uint32_t line);
+int32_t msm_sensor_write_exp_gain_ov (struct msm_sensor_ctrl_t *s_ctrl,
+		int mode, uint16_t gain, uint16_t dig_gain, uint32_t line); 
 int32_t msm_sensor_set_sensor_mode(struct msm_sensor_ctrl_t *s_ctrl,
 	int mode, int res);
 int32_t msm_sensor_mode_init(struct msm_sensor_ctrl_t *s_ctrl,
@@ -195,8 +294,28 @@ int32_t msm_sensor_get_output_info(struct msm_sensor_ctrl_t *,
 		struct sensor_output_info_t *);
 int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 			void __user *argp);
+
 int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl);
 int32_t msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl);
+#if 1	
+int32_t msm_sensor_set_power_up(struct msm_sensor_ctrl_t *s_ctrl);
+int32_t msm_sensor_set_power_down(struct msm_sensor_ctrl_t *s_ctrl);
+
+int32_t msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl);
+int msm_sensor_i2c_probe(struct i2c_client *client,
+	const struct i2c_device_id *id);
+int32_t msm_sensor_release(struct msm_sensor_ctrl_t *s_ctrl);
+int32_t msm_sensor_open_init(struct msm_sensor_ctrl_t *s_ctrl,
+				const struct msm_camera_sensor_info *data);
+int msm_sensor_probe(struct msm_sensor_ctrl_t *s_ctrl,
+		const struct msm_camera_sensor_info *info,
+		struct msm_sensor_ctrl *s);
+
+int msm_sensor_v4l2_probe(struct msm_sensor_ctrl_t *s_ctrl,
+	const struct msm_camera_sensor_info *info,
+	struct v4l2_subdev *sdev, struct msm_sensor_ctrl *s);
+
+#endif	
 
 int32_t msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl);
 int msm_sensor_i2c_probe(struct i2c_client *client,
@@ -225,10 +344,15 @@ int msm_sensor_write_res_settings
 int32_t msm_sensor_write_output_settings(struct msm_sensor_ctrl_t *s_ctrl,
 	uint16_t res);
 
-int32_t msm_sensor_adjust_frame_lines(struct msm_sensor_ctrl_t *s_ctrl,
-	uint16_t res);
-
 int32_t msm_sensor_setting(struct msm_sensor_ctrl_t *s_ctrl,
+			int update_type, int res);
+
+int32_t msm_sensor_setting_parallel(struct msm_sensor_ctrl_t *s_ctrl,
+			int update_type, int res);
+int32_t msm_sensor_setting_parallel_ov(struct msm_sensor_ctrl_t *s_ctrl,
+			int update_type, int res);
+
+int32_t msm_sensor_setting_ov(struct msm_sensor_ctrl_t *s_ctrl,
 			int update_type, int res);
 
 int32_t msm_sensor_setting1(struct msm_sensor_ctrl_t *s_ctrl,
@@ -239,9 +363,31 @@ int msm_sensor_enable_debugfs(struct msm_sensor_ctrl_t *s_ctrl);
 long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 			unsigned int cmd, void *arg);
 
+void msm_read_command_line(struct msm_sensor_ctrl_t *);
+
 struct msm_sensor_ctrl_t *get_sctrl(struct v4l2_subdev *sd);
+
+#if (defined CONFIG_WEBCAM_OV7692_QRD || defined CONFIG_OV5647)
+	extern int lcd_camera_power_onoff(int on);
+#endif
+int32_t msm_sensor_adjust_frame_lines(struct msm_sensor_ctrl_t *s_ctrl,
+	uint16_t res);
+
 
 #define VIDIOC_MSM_SENSOR_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 10, void __user *)
+
+#define VIDIOC_MSM_SENSOR_RELEASE \
+	_IO('V', BASE_VIDIOC_PRIVATE + 11)
+
+#define VIDIOC_MSM_SENSOR_INTERFACE_CFG \
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 12, void __user *)
+
+struct file* msm_fopen(const char* path, int flags, int rights);
+int msm_fwrite(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size);
+void msm_fclose(struct file* file);
+void msm_dump_otp_to_file(const char* sensor_name, int valid_layer, short start_address, uint8_t* buffer, size_t count);
+void msm_read_all_otp_data(struct msm_camera_i2c_client* client,short start_address, uint8_t* buffer, size_t count);
+
 
 #endif

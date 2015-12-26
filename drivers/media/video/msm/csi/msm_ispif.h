@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,6 +34,7 @@ struct ispif_device {
 	struct completion reset_complete;
 	uint32_t csid_version;
 	struct clk *ispif_clk[5];
+	uint32_t rdi0_sof_count;
 };
 
 struct ispif_isr_queue_cmd {
@@ -64,5 +65,6 @@ struct ispif_isr_queue_cmd {
 #define RDI_1 (0x01 << 3)
 
 void msm_ispif_vfe_get_cid(uint8_t intftype, char *cids, int *num);
+void msm_ispif_get_input_sel_cid(uint8_t intftype, uint8_t *csid);
 
 #endif

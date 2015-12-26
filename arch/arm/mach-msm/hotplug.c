@@ -1,7 +1,7 @@
 /*
  *  Copyright (C) 2002 ARM Ltd.
- *  Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *  All Rights Reserved
+ *  Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -13,23 +13,20 @@
 #include <linux/cpu.h>
 
 #include <asm/cacheflush.h>
+#include <asm/smp_plat.h>
 #include <asm/vfp.h>
 
+#include <mach/jtag.h>
 #include <mach/msm_rtb.h>
 
 #include "pm.h"
-#include "qdss.h"
 #include "spm.h"
 
 extern volatile int pen_release;
 
-struct msm_hotplug_device {
-	struct completion cpu_killed;
-	unsigned int warm_boot;
-};
+static cpumask_t cpu_dying_mask;
 
-static DEFINE_PER_CPU_SHARED_ALIGNED(struct msm_hotplug_device,
-			msm_hotplug_devices);
+static DEFINE_PER_CPU(unsigned int, warm_boot_flag);
 
 static inline void cpu_enter_lowpower(void)
 {
@@ -42,19 +39,16 @@ static inline void cpu_leave_lowpower(void)
 {
 }
 
-static inline void platform_do_lowpower(unsigned int cpu)
+static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
 {
 	/* Just enter wfi for now. TODO: Properly shut off the cpu. */
 	for (;;) {
 
 		msm_pm_cpu_enter_lowpower(cpu);
-		if (pen_release == cpu) {
+		if (pen_release == cpu_logical_map(cpu)) {
 			/*
 			 * OK, proper wakeup, we're done
 			 */
-			pen_release = -1;
-			dmac_flush_range((void *)&pen_release,
-				(void *)(&pen_release + sizeof(pen_release)));
 			break;
 		}
 
@@ -66,23 +60,18 @@ static inline void platform_do_lowpower(unsigned int cpu)
 		 * possible, since we are currently running incoherently, and
 		 * therefore cannot safely call printk() or anything else
 		 */
-		dmac_inv_range((void *)&pen_release,
-			       (void *)(&pen_release + sizeof(pen_release)));
-		pr_debug("CPU%u: spurious wakeup call\n", cpu);
+		(*spurious)++;
 	}
 }
 
 int platform_cpu_kill(unsigned int cpu)
 {
-	struct completion *killed =
-		&per_cpu(msm_hotplug_devices, cpu).cpu_killed;
-	int ret;
+	int ret = 0;
 
-	ret = wait_for_completion_timeout(killed, HZ * 5);
-	if (ret)
-		return ret;
+	if (cpumask_test_and_clear_cpu(cpu, &cpu_dying_mask))
+		ret = msm_pm_wait_cpu_shutdown(cpu);
 
-	return msm_pm_wait_cpu_shutdown(cpu);
+	return ret ? 0 : 1;
 }
 
 /*
@@ -92,20 +81,24 @@ int platform_cpu_kill(unsigned int cpu)
  */
 void platform_cpu_die(unsigned int cpu)
 {
+	int spurious = 0;
+
 	if (unlikely(cpu != smp_processor_id())) {
 		pr_crit("%s: running on %u, should be %u\n",
 			__func__, smp_processor_id(), cpu);
 		BUG();
 	}
-	complete(&__get_cpu_var(msm_hotplug_devices).cpu_killed);
 	/*
 	 * we're ready for shutdown now, so do it
 	 */
 	cpu_enter_lowpower();
-	platform_do_lowpower(cpu);
+	platform_do_lowpower(cpu, &spurious);
 
-	pr_notice("CPU%u: %s: normal wakeup\n", cpu, __func__);
+	pr_debug("CPU%u: %s: normal wakeup\n", cpu, __func__);
 	cpu_leave_lowpower();
+
+	if (spurious)
+		pr_warn("CPU%u: %u spurious wakeup calls\n", cpu, spurious);
 }
 
 int platform_cpu_disable(unsigned int cpu)
@@ -144,6 +137,7 @@ static int hotplug_rtb_callback(struct notifier_block *nfb,
 		uncached_logk(LOGK_HOTPLUG, (void *)(cpudata | this_cpumask));
 		break;
 	case CPU_DYING:
+		cpumask_set_cpu((unsigned long)hcpu, &cpu_dying_mask);
 		uncached_logk(LOGK_HOTPLUG, (void *)(cpudata & ~this_cpumask));
 		break;
 	default:
@@ -159,24 +153,23 @@ static struct notifier_block hotplug_rtb_notifier = {
 int msm_platform_secondary_init(unsigned int cpu)
 {
 	int ret;
-	struct msm_hotplug_device *dev = &__get_cpu_var(msm_hotplug_devices);
+	unsigned int *warm_boot = &__get_cpu_var(warm_boot_flag);
 
-	if (!dev->warm_boot) {
-		dev->warm_boot = 1;
-		init_completion(&dev->cpu_killed);
+	if (!(*warm_boot)) {
+		*warm_boot = 1;
 		return 0;
 	}
 	msm_jtag_restore_state();
-#ifdef CONFIG_VFP
-	vfp_reinit();
+#if defined(CONFIG_VFP) && defined (CONFIG_CPU_PM)
+	vfp_pm_resume();
 #endif
 	ret = msm_spm_set_low_power_mode(MSM_SPM_MODE_CLOCK_GATING, false);
 
 	return ret;
 }
 
-static int __init init_hotplug_notifier(void)
+static int __init init_hotplug(void)
 {
 	return register_hotcpu_notifier(&hotplug_rtb_notifier);
 }
-early_initcall(init_hotplug_notifier);
+early_initcall(init_hotplug);

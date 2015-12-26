@@ -251,9 +251,8 @@ static int audio_open(struct inode *inode, struct file *file)
 		goto fail;
 	}
 	rc = audio_aio_open(audio, file);
-	if (IS_ERR_OR_NULL(audio)) {
-		pr_err("%s: audio_aio_open failed\n", __func__);
-		rc = -EACCES;
+	if (rc < 0) {
+		pr_err("audio_aio_open rc=%d\n", rc);
 		goto fail;
 	}
 

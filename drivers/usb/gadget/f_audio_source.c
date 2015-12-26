@@ -14,6 +14,8 @@
  *
  */
 
+#include <asm/dma.h>
+#include <linux/dma-mapping.h>
 #include <linux/device.h>
 #include <linux/usb/audio.h>
 #include <linux/wait.h>
@@ -24,7 +26,7 @@
 #define SAMPLE_RATE 44100
 #define FRAMES_PER_MSEC (SAMPLE_RATE / 1000)
 
-#define IN_EP_MAX_PACKET_SIZE 384
+#define IN_EP_MAX_PACKET_SIZE 256
 
 /* Number of requests to allocate */
 #define IN_EP_REQ_COUNT 4
@@ -523,9 +525,24 @@ audio_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 static int audio_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 {
 	struct audio_dev *audio = func_to_audio(f);
+	struct usb_composite_dev *cdev = f->config->cdev;
+	int ret;
 
 	pr_debug("audio_set_alt intf %d, alt %d\n", intf, alt);
-	usb_ep_enable(audio->in_ep, &fs_as_in_ep_desc);
+
+	ret = config_ep_by_speed(cdev->gadget, f, audio->in_ep);
+	if (ret) {
+		audio->in_ep->desc = NULL;
+		ERROR(cdev, "config_ep_by_speed failes for ep %s, result %d\n",
+				audio->in_ep->name, ret);
+			return ret;
+	}
+	ret = usb_ep_enable(audio->in_ep);
+	if (ret) {
+		ERROR(cdev, "failed to enable ep %s, result %d\n",
+			audio->in_ep->name, ret);
+		return ret;
+	}
 	return 0;
 }
 
@@ -591,9 +608,6 @@ audio_bind(struct usb_configuration *c, struct usb_function *f)
 	if (gadget_is_dualspeed(c->cdev->gadget))
 		hs_as_in_ep_desc.bEndpointAddress =
 			fs_as_in_ep_desc.bEndpointAddress;
-
-	f->descriptors = fs_audio_desc;
-	f->hs_descriptors = hs_audio_desc;
 
 	for (i = 0, status = 0; i < IN_EP_REQ_COUNT && status == 0; i++) {
 		req = audio_request_new(ep, IN_EP_MAX_PACKET_SIZE);
@@ -672,6 +686,7 @@ static int audio_pcm_close(struct snd_pcm_substream *substream)
 static int audio_pcm_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
+	struct snd_dma_buffer *buf = &substream->dma_buffer;
 	unsigned int channels = params_channels(params);
 	unsigned int rate = params_rate(params);
 
@@ -680,13 +695,31 @@ static int audio_pcm_hw_params(struct snd_pcm_substream *substream,
 	if (channels != 2)
 		return -EINVAL;
 
-	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
-		params_buffer_bytes(params));
+	if (!substream->pcm->card->dev->coherent_dma_mask)
+		substream->pcm->card->dev->coherent_dma_mask = DMA_BIT_MASK(32);
+
+	buf->dev.type = SNDRV_DMA_TYPE_DEV;
+	buf->dev.dev = substream->pcm->card->dev;
+	buf->private_data = NULL;
+	buf->area = dma_alloc_coherent(substream->pcm->card->dev,
+			params_buffer_bytes(params),
+			&buf->addr, GFP_KERNEL);
+	if (!buf->area)
+		return -ENOMEM;
+	buf->bytes = params_buffer_bytes(params);
+	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
+	return 0;
 }
 
 static int audio_pcm_hw_free(struct snd_pcm_substream *substream)
 {
-	return snd_pcm_lib_free_vmalloc_buffer(substream);
+	struct snd_dma_buffer *buf = &substream->dma_buffer;
+
+	if (buf->area != NULL)
+		dma_free_coherent(substream->pcm->card->dev, buf->bytes,
+					buf->area, buf->addr);
+	buf->area = NULL;
+	return 0;
 }
 
 static int audio_pcm_prepare(struct snd_pcm_substream *substream)
@@ -738,6 +771,22 @@ static int audio_pcm_playback_trigger(struct snd_pcm_substream *substream,
 	return ret;
 }
 
+static int audio_pcm_mmap(struct snd_pcm_substream *substream,
+				struct vm_area_struct *vma)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+
+	if (runtime->dma_addr && runtime->dma_bytes) {
+		return dma_mmap_coherent(substream->pcm->card->dev, vma,
+					runtime->dma_area,
+					runtime->dma_addr,
+					runtime->dma_bytes);
+	} else {
+		pr_err("Physical address or size of buf is NULL");
+		return -EINVAL;
+	}
+}
+
 static struct audio_dev _audio_dev = {
 	.func = {
 		.name = "audio_source",
@@ -746,6 +795,8 @@ static struct audio_dev _audio_dev = {
 		.set_alt = audio_set_alt,
 		.setup = audio_setup,
 		.disable = audio_disable,
+		.descriptors = fs_audio_desc,
+		.hs_descriptors = hs_audio_desc,
 	},
 	.lock = __SPIN_LOCK_UNLOCKED(_audio_dev.lock),
 	.idle_reqs = LIST_HEAD_INIT(_audio_dev.idle_reqs),
@@ -760,6 +811,7 @@ static struct snd_pcm_ops audio_playback_ops = {
 	.prepare	= audio_pcm_prepare,
 	.trigger	= audio_pcm_playback_trigger,
 	.pointer	= audio_pcm_pointer,
+	.mmap		= audio_pcm_mmap,
 };
 
 int audio_source_bind_config(struct usb_configuration *c,

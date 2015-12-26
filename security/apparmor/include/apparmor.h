@@ -34,11 +34,11 @@
 
 /* Control parameters settable through module/boot flags */
 extern enum audit_mode aa_g_audit;
-extern int aa_g_audit_header;
-extern int aa_g_debug;
-extern int aa_g_lock_policy;
-extern int aa_g_logsyscall;
-extern int aa_g_paranoid_load;
+extern bool aa_g_audit_header;
+extern bool aa_g_debug;
+extern bool aa_g_lock_policy;
+extern bool aa_g_logsyscall;
+extern bool aa_g_paranoid_load;
 extern unsigned int aa_g_path_max;
 
 /*
@@ -94,7 +94,7 @@ static inline unsigned int aa_dfa_null_transition(struct aa_dfa *dfa,
 						  unsigned int start)
 {
 	/* the null transition only needs the string's null terminator byte */
-	return aa_dfa_match_len(dfa, start, "", 1);
+	return aa_dfa_next(dfa, start, 0);
 }
 
 static inline bool mediated_filesystem(struct inode *inode)

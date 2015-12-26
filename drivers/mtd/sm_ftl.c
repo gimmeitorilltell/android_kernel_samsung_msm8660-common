@@ -25,7 +25,7 @@
 struct workqueue_struct *cache_flush_workqueue;
 
 static int cache_timeout = 1000;
-module_param(cache_timeout, bool, S_IRUGO);
+module_param(cache_timeout, int, S_IRUGO);
 MODULE_PARM_DESC(cache_timeout,
 	"Timeout (in ms) for cache flush (1000 ms default");
 
@@ -34,7 +34,7 @@ module_param(debug, int, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(debug, "Debug level (0-2)");
 
 
-/* ------------------- sysfs attributtes ---------------------------------- */
+/* ------------------- sysfs attributes ---------------------------------- */
 struct sm_sysfs_attribute {
 	struct device_attribute dev_attr;
 	char *data;
@@ -59,15 +59,12 @@ struct attribute_group *sm_create_sysfs_attributes(struct sm_ftl *ftl)
 	struct attribute_group *attr_group;
 	struct attribute **attributes;
 	struct sm_sysfs_attribute *vendor_attribute;
+	char *vendor;
 
-	int vendor_len = strnlen(ftl->cis_buffer + SM_CIS_VENDOR_OFFSET,
-					SM_SMALL_PAGE - SM_CIS_VENDOR_OFFSET);
-
-	char *vendor = kmalloc(vendor_len, GFP_KERNEL);
+	vendor = kstrndup(ftl->cis_buffer + SM_CIS_VENDOR_OFFSET,
+			  SM_SMALL_PAGE - SM_CIS_VENDOR_OFFSET, GFP_KERNEL);
 	if (!vendor)
 		goto error1;
-	memcpy(vendor, ftl->cis_buffer + SM_CIS_VENDOR_OFFSET, vendor_len);
-	vendor[vendor_len] = 0;
 
 	/* Initialize sysfs attributes */
 	vendor_attribute =
@@ -78,7 +75,7 @@ struct attribute_group *sm_create_sysfs_attributes(struct sm_ftl *ftl)
 	sysfs_attr_init(&vendor_attribute->dev_attr.attr);
 
 	vendor_attribute->data = vendor;
-	vendor_attribute->len = vendor_len;
+	vendor_attribute->len = strlen(vendor);
 	vendor_attribute->dev_attr.attr.name = "vendor";
 	vendor_attribute->dev_attr.attr.mode = S_IRUGO;
 	vendor_attribute->dev_attr.show = sm_attr_show;
@@ -138,7 +135,7 @@ static int sm_get_lba(uint8_t *lba)
 	if ((lba[0] & 0xF8) != 0x10)
 		return -2;
 
-	/* check parity - endianess doesn't matter */
+	/* check parity - endianness doesn't matter */
 	if (hweight16(*(uint16_t *)lba) & 1)
 		return -2;
 
@@ -147,7 +144,7 @@ static int sm_get_lba(uint8_t *lba)
 
 
 /*
- * Read LBA asscociated with block
+ * Read LBA associated with block
  * returns -1, if block is erased
  * returns -2 if error happens
  */
@@ -252,11 +249,11 @@ static int sm_read_sector(struct sm_ftl *ftl,
 		return 0;
 	}
 
-	/* User might not need the oob, but we do for data vertification */
+	/* User might not need the oob, but we do for data verification */
 	if (!oob)
 		oob = &tmp_oob;
 
-	ops.mode = ftl->smallpagenand ? MTD_OOB_RAW : MTD_OOB_PLACE;
+	ops.mode = ftl->smallpagenand ? MTD_OPS_RAW : MTD_OPS_PLACE_OOB;
 	ops.ooboffs = 0;
 	ops.ooblen = SM_OOB_SIZE;
 	ops.oobbuf = (void *)oob;
@@ -276,12 +273,12 @@ again:
 			return ret;
 	}
 
-	/* Unfortunelly, oob read will _always_ succeed,
+	/* Unfortunately, oob read will _always_ succeed,
 		despite card removal..... */
-	ret = mtd->read_oob(mtd, sm_mkoffset(ftl, zone, block, boffset), &ops);
+	ret = mtd_read_oob(mtd, sm_mkoffset(ftl, zone, block, boffset), &ops);
 
 	/* Test for unknown errors */
-	if (ret != 0 && ret != -EUCLEAN && ret != -EBADMSG) {
+	if (ret != 0 && !mtd_is_bitflip_or_eccerr(ret)) {
 		dbg("read of block %d at zone %d, failed due to error (%d)",
 			block, zone, ret);
 		goto again;
@@ -306,7 +303,7 @@ again:
 	}
 
 	/* Test ECC*/
-	if (ret == -EBADMSG ||
+	if (mtd_is_eccerr(ret) ||
 		(ftl->smallpagenand && sm_correct_sector(buffer, oob))) {
 
 		dbg("read of block %d at zone %d, failed due to ECC error",
@@ -336,14 +333,14 @@ static int sm_write_sector(struct sm_ftl *ftl,
 	if (ftl->unstable)
 		return -EIO;
 
-	ops.mode = ftl->smallpagenand ? MTD_OOB_RAW : MTD_OOB_PLACE;
+	ops.mode = ftl->smallpagenand ? MTD_OPS_RAW : MTD_OPS_PLACE_OOB;
 	ops.len = SM_SECTOR_SIZE;
 	ops.datbuf = buffer;
 	ops.ooboffs = 0;
 	ops.ooblen = SM_OOB_SIZE;
 	ops.oobbuf = (void *)oob;
 
-	ret = mtd->write_oob(mtd, sm_mkoffset(ftl, zone, block, boffset), &ops);
+	ret = mtd_write_oob(mtd, sm_mkoffset(ftl, zone, block, boffset), &ops);
 
 	/* Now we assume that hardware will catch write bitflip errors */
 	/* If you are paranoid, use CONFIG_MTD_NAND_VERIFY_WRITE */
@@ -447,14 +444,14 @@ static void sm_mark_block_bad(struct sm_ftl *ftl, int zone, int block)
 
 	/* We aren't checking the return value, because we don't care */
 	/* This also fails on fake xD cards, but I guess these won't expose
-		any bad blocks till fail completly */
+		any bad blocks till fail completely */
 	for (boffset = 0; boffset < ftl->block_size; boffset += SM_SECTOR_SIZE)
 		sm_write_sector(ftl, zone, block, boffset, NULL, &oob);
 }
 
 /*
  * Erase a block within a zone
- * If erase succedes, it updates free block fifo, otherwise marks block as bad
+ * If erase succeeds, it updates free block fifo, otherwise marks block as bad
  */
 static int sm_erase_block(struct sm_ftl *ftl, int zone_num, uint16_t block,
 			  int put_free)
@@ -479,7 +476,7 @@ static int sm_erase_block(struct sm_ftl *ftl, int zone_num, uint16_t block,
 		return -EIO;
 	}
 
-	if (mtd->erase(mtd, &erase)) {
+	if (mtd_erase(mtd, &erase)) {
 		sm_printk("erase of block %d in zone %d failed",
 							block, zone_num);
 		goto error;
@@ -510,7 +507,7 @@ static void sm_erase_callback(struct erase_info *self)
 	complete(&ftl->erase_completion);
 }
 
-/* Throughtly test that block is valid. */
+/* Thoroughly test that block is valid. */
 static int sm_check_block(struct sm_ftl *ftl, int zone, int block)
 {
 	int boffset;
@@ -526,7 +523,7 @@ static int sm_check_block(struct sm_ftl *ftl, int zone, int block)
 	for (boffset = 0; boffset < ftl->block_size;
 					boffset += SM_SECTOR_SIZE) {
 
-		/* This shoudn't happen anyway */
+		/* This shouldn't happen anyway */
 		if (sm_read_sector(ftl, zone, block, boffset, NULL, &oob))
 			return -2;
 
@@ -645,8 +642,8 @@ int sm_get_media_info(struct sm_ftl *ftl, struct mtd_info *mtd)
 	if (!ftl->smallpagenand && mtd->oobsize < SM_OOB_SIZE)
 		return -ENODEV;
 
-	/* We use these functions for IO */
-	if (!mtd->read_oob || !mtd->write_oob)
+	/* We use OOB */
+	if (!mtd_has_oob(mtd))
 		return -ENODEV;
 
 	/* Find geometry information */

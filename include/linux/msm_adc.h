@@ -152,7 +152,6 @@ enum {
 	CHAN_PATH_TYPE_NONE = 0xffffffff
 };
 
-#if defined (CONFIG_SAMSUNG_8X60_TABLET)
 #define CHANNEL_ADC_BATT_ID     0
 #define CHANNEL_ADC_BATT_THERM  1
 #define CHANNEL_ADC_BATT_AMON   2
@@ -171,38 +170,8 @@ enum {
 #define CHANNEL_ADC_625_REF	0xf
 #define CHANNEL_ADC_1250_REF	0x10
 #define CHANNEL_ADC_325_REF	0x11
-#if defined(CONFIG_BATTERY_P5LTE)
-#define CHANNEL_ADC_CABLE_CHECK 0x12
-#endif 
-// for getting ADC of accessory
-// 2011.06.30 by Rami.Jung
-#define CHANNEL_ADC_ACC_CHECK 0x13
-#define CHANNEL_ADC_LIGHT_LUX		0x14
-#else
-#if 0  // remove previous definition
-#define CHANNEL_ADC_HDSET			1
-#endif
-#define CHANNEL_ADC_LIGHT_LUX		2
-#define CHANNEL_ADC_BATT_THERM		3
-#define CHANNEL_ADC_CHG_MONITOR 	4
-#define CHANNEL_ADC_BATT_ID			5
-#define CHANNEL_ADC_PMIC_THERM		6
-#if 0  // remove previous definition
-#define CHANNEL_ADC_XOTHERM     	7
-#define CHANNEL_ADC_XOTHERM_4K     	8
-#endif
-#define CHANNEL_ADC_DIE_TEMP    9
-#define CHANNEL_ADC_DIE_TEMP_4K 0xa
-#define CHANNEL_ADC_XOTHERM     0xb
-#define CHANNEL_ADC_XOTHERM_4K  0xc
-#define CHANNEL_ADC_HDSET       0xd
-#define CHANNEL_ADC_MSM_THERM	0xe
-#if defined (CONFIG_PMIC8058_XOADC_CAL)
-#define CHANNEL_ADC_625_REF	0xf
-#define CHANNEL_ADC_1250_REF	0x10
-#define CHANNEL_ADC_325_REF	0x11
-#endif
-#endif
+#define CHANNEL_ADC_FSM_THERM	0x12
+#define CHANNEL_ADC_PA_THERM	0x13
 
 enum {
 	CALIB_STARTED,
@@ -267,6 +236,7 @@ enum hw_type {
 	MSM_7x30,
 	MSM_8x60,
 	FSM_9xxx,
+	MSM_8x25,
 };
 
 enum epm_gpio_config {
@@ -375,23 +345,23 @@ int32_t adc_channel_close(void *h);
 int32_t adc_channel_request_conv(void *h, struct completion *conv_complete_evt);
 int32_t adc_channel_read_result(void *h, struct adc_chan_result *chan_result);
 #else
-static int32_t adc_channel_open(uint32_t channel, void **h)
+static inline int32_t adc_channel_open(uint32_t channel, void **h)
 {
 	pr_err("%s.not supported.\n", __func__);
 	return -ENODEV;
 }
-static int32_t adc_channel_close(void *h)
+static inline int32_t adc_channel_close(void *h)
 {
 	pr_err("%s.not supported.\n", __func__);
 	return -ENODEV;
 }
-static int32_t
+static inline int32_t
 adc_channel_request_conv(void *h, struct completion *conv_complete_evt)
 {
 	pr_err("%s.not supported.\n", __func__);
 	return -ENODEV;
 }
-static int32_t
+static inline int32_t
 adc_channel_read_result(void *h, struct adc_chan_result *chan_result)
 {
 	pr_err("%s.not supported.\n", __func__);

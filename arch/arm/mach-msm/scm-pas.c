@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/clk.h>
+#include <linux/dma-mapping.h>
 
 #include <mach/scm.h>
 #include <mach/socinfo.h>
@@ -36,18 +37,28 @@ int pas_init_image(enum pas_id id, const u8 *metadata, size_t size)
 		u32	image_addr;
 	} request;
 	u32 scm_ret = 0;
-	/* Make memory physically contiguous */
-	void *mdata_buf = kmemdup(metadata, size, GFP_KERNEL);
+	void *mdata_buf;
+	dma_addr_t mdata_phys;
+	DEFINE_DMA_ATTRS(attrs);
 
-	if (!mdata_buf)
+	dma_set_attr(DMA_ATTR_STRONGLY_ORDERED, &attrs);
+	mdata_buf = dma_alloc_attrs(NULL, size, &mdata_phys, GFP_KERNEL,
+	                                      &attrs);
+
+	if (!mdata_buf) {
+	        pr_err("Allocation for metadata failed.\n");
 		return -ENOMEM;
+        }
+
+        memcpy(mdata_buf, metadata, size);
 
 	request.proc = id;
-	request.image_addr = virt_to_phys(mdata_buf);
+	request.image_addr = mdata_phys;
 
 	ret = scm_call(SCM_SVC_PIL, PAS_INIT_IMAGE_CMD, &request,
 			sizeof(request), &scm_ret, sizeof(scm_ret));
-	kfree(mdata_buf);
+
+        dma_free_attrs(NULL, size, mdata_buf, mdata_phys, &attrs);
 
 	if (ret)
 		return ret;
@@ -94,7 +105,7 @@ static int scm_pas_enable_bw(void)
 {
 	int ret = 0;
 
-	if (!scm_perf_client || !scm_bus_clk)
+	if (!scm_perf_client)
 		return -EINVAL;
 
 	mutex_lock(&scm_pas_bw_mutex);
@@ -102,8 +113,8 @@ static int scm_pas_enable_bw(void)
 		ret = msm_bus_scale_client_update_request(scm_perf_client, 1);
 		if (ret) {
 			pr_err("bandwidth request failed (%d)\n", ret);
-		} else {
-			ret = clk_enable(scm_bus_clk);
+		} else if (scm_bus_clk) {
+			ret = clk_prepare_enable(scm_bus_clk);
 			if (ret)
 				pr_err("clock enable failed\n");
 		}
@@ -121,7 +132,8 @@ static void scm_pas_disable_bw(void)
 	mutex_lock(&scm_pas_bw_mutex);
 	if (scm_pas_bw_count-- == 1) {
 		msm_bus_scale_client_update_request(scm_perf_client, 0);
-		clk_disable(scm_bus_clk);
+		if (scm_bus_clk)
+			clk_disable_unprepare(scm_bus_clk);
 	}
 	mutex_unlock(&scm_pas_bw_mutex);
 }
@@ -190,19 +202,23 @@ EXPORT_SYMBOL(pas_supported);
 
 static int __init scm_pas_init(void)
 {
-	/* TODO: Remove once bus scaling driver is in place */
-	if (!cpu_is_apq8064())
-		scm_perf_client = msm_bus_scale_register_client(
-				&scm_pas_bus_pdata);
+	if (cpu_is_msm8974()) {
+		scm_pas_bw_tbl[0].vectors[0].src = MSM_BUS_MASTER_CRYPTO_CORE0;
+		scm_pas_bw_tbl[1].vectors[0].src = MSM_BUS_MASTER_CRYPTO_CORE0;
+	} else {
+		scm_bus_clk = clk_get_sys("scm", "bus_clk");
+		if (!IS_ERR(scm_bus_clk)) {
+			clk_set_rate(scm_bus_clk, 64000000);
+		} else {
+			scm_bus_clk = NULL;
+			pr_warn("unable to get bus clock\n");
+		}
+	}
+
+	scm_perf_client = msm_bus_scale_register_client(&scm_pas_bus_pdata);
 	if (!scm_perf_client)
 		pr_warn("unable to register bus client\n");
-	scm_bus_clk = clk_get_sys("scm", "bus_clk");
-	if (!IS_ERR(scm_bus_clk)) {
-		clk_set_rate(scm_bus_clk, 64000000);
-	} else {
-		scm_bus_clk = NULL;
-		pr_warn("unable to get bus clock\n");
-	}
+
 	return 0;
 }
 module_init(scm_pas_init);
