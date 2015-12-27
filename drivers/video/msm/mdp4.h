@@ -876,7 +876,9 @@ static inline void mdp4_overlay_dsi_video_start(void)
 
 static int mdp4_dsi_video_splash_done(void)
 {
+	return 0;
 }
+
 #endif /* CONFIG_FB_MSM_MIPI_DSI */
 
 void mdp4_dsi_cmd_kickoff_ui(struct msm_fb_data_type *mfd,

@@ -4168,8 +4168,7 @@ static struct platform_device *early_devices[] __initdata = {
 	&msm_device_dmov_adm1,
 };
 
-#if (defined(CONFIG_MARIMBA_CORE)) && \
-	(defined(CONFIG_MSM_BT_POWER) || defined(CONFIG_MSM_BT_POWER_MODULE))
+#if 0 //(defined(CONFIG_MARIMBA_CORE)) && (defined(CONFIG_MSM_BT_POWER) || defined(CONFIG_MSM_BT_POWER_MODULE))
 
 static int bluetooth_power(int);
 static struct platform_device msm_bt_power_device = {
@@ -5240,8 +5239,7 @@ static struct platform_device *surf_devices[] __initdata = {
 	&msm8660_rpm_stat_device,
 #endif
 	&msm_device_vidc,
-#if (defined(CONFIG_MARIMBA_CORE)) && \
-	(defined(CONFIG_MSM_BT_POWER) || defined(CONFIG_MSM_BT_POWER_MODULE))
+#if 0 //(defined(CONFIG_MARIMBA_CORE)) && (defined(CONFIG_MSM_BT_POWER) || defined(CONFIG_MSM_BT_POWER_MODULE))
 	&msm_bt_power_device,
 #endif
 #ifdef CONFIG_SENSORS_MSM_ADC
@@ -9787,8 +9785,7 @@ static void set_mdp_clocks_for_wuxga(void)
 	mdp_pdata.mdp_max_clk = 200000000;
 }
 
-#if (defined(CONFIG_MARIMBA_CORE)) && \
-	(defined(CONFIG_MSM_BT_POWER) || defined(CONFIG_MSM_BT_POWER_MODULE))
+#if 0 // (defined(CONFIG_MARIMBA_CORE)) && (defined(CONFIG_MSM_BT_POWER) || defined(CONFIG_MSM_BT_POWER_MODULE))
 
 static const struct {
 	char *name;

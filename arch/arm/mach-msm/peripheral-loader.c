@@ -27,9 +27,6 @@
 #include <linux/workqueue.h>
 #include <linux/jiffies.h>
 #include <linux/wakelock.h>
-#ifdef CONFIG_MACH_HTC
-#include <linux/delay.h>
-#endif
 
 #include <asm/uaccess.h>
 #include <asm/setup.h>
@@ -596,7 +593,6 @@ static void msm_pil_debugfs_remove(struct pil_device *pil)
 }
 #else
 static int __init msm_pil_debugfs_init(void) { return 0; };
-static void __exit msm_pil_debugfs_exit(void) { return 0; };
 static int msm_pil_debugfs_add(struct pil_device *pil) { return 0; }
 static void msm_pil_debugfs_remove(struct pil_device *pil) { }
 #endif
@@ -707,7 +703,6 @@ static void __exit msm_pil_exit(void)
 {
 	bus_unregister(&pil_bus_type);
 	unregister_pm_notifier(&pil_pm_notifier);
-	msm_pil_debugfs_exit();
 }
 module_exit(msm_pil_exit);
 

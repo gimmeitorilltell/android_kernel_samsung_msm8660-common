@@ -334,12 +334,6 @@ int vcvp_qbuf(struct vb2_queue *q, struct v4l2_buffer *b)
 		return -EINVAL;
 	}
 
-	if (vb->state != VB2_BUF_STATE_DEQUEUED &&
-			vb->state != VB2_BUF_STATE_PREPARED) {
-		dprintk(1, "%s: buffer already in use\n", __func__);
-		return -EINVAL;
-	}
-
 	list_add_tail(&vb->queued_entry, &q->queued_list);
 	vb->state = VB2_BUF_STATE_QUEUED;
 
@@ -1513,7 +1507,6 @@ static int vidioc_subscribe_event(struct v4l2_fh *fh,
 	if (sub->type == V4L2_EVENT_ALL) {
 		sub->type = V4L2_EVENT_PRIVATE_START +
 				VCAP_GENERIC_NOTIFY_EVENT;
-		sub->id = 0;
 		do {
 			rc = v4l2_event_subscribe(fh, sub, 16);
 			if (rc < 0) {
