@@ -37,57 +37,6 @@
 
 #include "zram_drv.h"
 
-#if defined(CONFIG_ZRAM_LZO)
-#include <linux/lzo.h>
-#define WMSIZE		LZO1X_MEM_COMPRESS
-#define COMPRESS(s, sl, d, dl, wm)	\
-	lzo1x_1_compress(s, sl, d, dl, wm)
-#define DECOMPRESS(s, sl, d, dl)	\
-	lzo1x_decompress_safe(s, sl, d, dl)
-#elif defined(CONFIG_ZRAM_SNAPPY)
-#include "../snappy/csnappy.h" /* if built in drivers/staging */
-#define WMSIZE_ORDER	((PAGE_SHIFT > 14) ? (15) : (PAGE_SHIFT+1))
-#define WMSIZE		(1 << WMSIZE_ORDER)
-static int
-snappy_compress_(
-	const unsigned char *src,
-	size_t src_len,
-	unsigned char *dst,
-	size_t *dst_len,
-	void *workmem)
-{
-	const unsigned char *end = csnappy_compress_fragment(
-		src, (uint32_t)src_len, dst, workmem, WMSIZE_ORDER);
-	*dst_len = end - dst;
-	return 0;
-}
-static int
-snappy_decompress_(
-	const unsigned char *src,
-	size_t src_len,
-	unsigned char *dst,
-	size_t *dst_len)
-{
-	uint32_t dst_len_ = (uint32_t)*dst_len;
-	int ret = csnappy_decompress_noheader(src, src_len, dst, &dst_len_);
-	*dst_len = (size_t)dst_len_;
-	return ret;
-}
-#define COMPRESS(s, sl, d, dl, wm)	\
-	snappy_compress_(s, sl, d, dl, wm)
-#define DECOMPRESS(s, sl, d, dl)	\
-	snappy_decompress_(s, sl, d, dl)
-#elif defined(CONFIG_ZRAM_LZ4)
-#include <linux/lz4.h>
-#define WMSIZE		LZ4_MEM_COMPRESS
-#define COMPRESS(s, sl, d, dl, wm)	\
-	lz4_compress(s, sl, d, dl, wm)
-#define DECOMPRESS(s, sl, d, dl)	\
-	lz4_decompress_unknownoutputsize(s, sl, d, dl)
-#else
-#error either CONFIG_ZRAM_LZO, CONFIG_ZRAM_SNAPPY, or CONFIG_ZRAM_LZ4 must be defined
-#endif
-
 /* Globals */
 static int zram_major;
 static struct zram *zram_devices;
@@ -857,15 +806,12 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
 		update_position(&index, &offset, bvec);
 	}
 
-	zram_meta_free(zram->meta);
-	zram->meta = NULL;
-	/* Reset stats */
-	memset(&zram->stats, 0, sizeof(zram->stats));
+	set_bit(BIO_UPTODATE, &bio->bi_flags);
+	bio_endio(bio, 0);
+	return;
 
-	zram->disksize = 0;
-	if (reset_capacity)
-		set_capacity(zram->disk, 0);
-	up_write(&zram->init_lock);
+out:
+	bio_io_error(bio);
 }
 
 /*
@@ -873,9 +819,7 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
  */
 static int zram_make_request(struct request_queue *queue, struct bio *bio)
 {
-	u64 disksize;
-	struct zram_meta *meta;
-	struct zram *zram = dev_to_zram(dev);
+	struct zram *zram = queue->queuedata;
 
 	down_read(&zram->init_lock);
 	if (unlikely(!init_done(zram)))
