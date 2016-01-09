@@ -561,4 +561,7 @@ extern unsigned int msm_shared_ram_phys; /* defined in arch/arm/mach-msm/io.c */
 /* celox LD9040 panel power */
 int lcdc_LD9040_panel_power(int enable);
 
+/* quincy S6E8AA0 panel power */
+int mipi_S6E8AA0_panel_power (int enable);
+
 #endif

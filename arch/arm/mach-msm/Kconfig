@@ -1629,10 +1629,20 @@ choice
 		bool "Reset the entire chip"
 endchoice
 
-config TARGET_SERIES_CELOX
-	bool "SERIES_CELOX"
-	help
-	  Support models of celox series
+choice
+	prompt "TARGET SERIES"
+	default TARGET_SERIES_CELOX
+
+	config TARGET_SERIES_CELOX
+		bool "SERIES_CELOX"
+		help
+		  Support models of celox series
+
+	config TARGET_SERIES_Q1
+		bool "SERIES_CELOX"
+		help
+		  Support models of q1 series		  
+endchoice
 
 config TARGET_LOCALE_USA
 	bool "Locale USA"
@@ -1646,6 +1656,14 @@ config USA_MODEL_SGH_I727
 config USA_MODEL_SGH_T989
 	depends on TARGET_SERIES_CELOX
 	bool "USA ATT SGH-T989"
+
+config USA_MODEL_SGH_I717
+	depends on TARGET_SERIES_Q1
+	bool "USA ATT SGH-I717"
+
+config USA_MODEL_SGH_T879
+	depends on TARGET_SERIES_Q1 && USA_MODEL_SGH_I717
+	bool "USA TMO SGH-T879"
 
 config SEC_AUDIO_DEVICE
 	bool "Sec AUDIO DEVICE"

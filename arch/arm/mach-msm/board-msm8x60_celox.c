@@ -4637,7 +4637,7 @@ static void fsa9480_mhl_cb(bool attached)
 	printk(KERN_ERR "fsa9480_mhl_cb attached %d\n", attached);
 	
 	device_attached = attached ? DEV_TYPE_MHL : DEV_TYPE_NONE;
-	set_cable_status = attached ? CABLE_TYPE_MISC : CABLE_TYPE_NONE;
+	set_cable_status = attached ? CABLE_TYPE_USB : CABLE_TYPE_NONE;
 
 #ifdef CONFIG_BATTERY_SEC
 	switch(set_cable_status) {
