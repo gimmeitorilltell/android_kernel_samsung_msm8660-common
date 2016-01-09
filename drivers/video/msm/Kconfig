@@ -230,6 +230,30 @@ config FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
 	  and up to WUXGA 1920x1200 18-bit
 	  using a dual LVDS link.
 
+config FB_MSM_MIPI_DSI_S6D6AA0_WXGA
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_S6E8AA0_HD720
+	bool
+	select FB_MSM_MIPI_DSI
+	select FB_MSM_MIPI_DSI_ESD_REFRESH
+	select FB_MSM_MDP_ADDITIONAL_BUS_SCALING
+	default n
+
+config FB_MSM_MIPI_DSI_S6E8AA0_WXGA
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_S6E8AA0_WXGA_Q1
+	bool
+	select FB_MSM_MIPI_DSI
+	select FB_MSM_MIPI_DSI_ESD_REFRESH
+	select FB_MSM_MDP_ADDITIONAL_BUS_SCALING
+	default n
+
 config FB_MSM_LCDC_ST15_WXGA
     bool
     select FB_MSM_LCDC_PANEL
@@ -410,6 +434,21 @@ config FB_MSM_MIPI_CHIMEI_WXGA
 	  The panel is connected to the host
 	  via Toshiba DSI-to-LVDS bridge.
 
+config FB_MSM_MIPI_S6D6AA0_WXGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_S6D6AA0_WXGA
+	default n
+
+config FB_MSM_MIPI_S6E8AA0_HD720_PT
+	bool
+	select FB_MSM_MIPI_DSI_S6E8AA0_HD720
+	default n
+
+config FB_MSM_MIPI_S6E8AA0_WXGA_Q1_PT
+	bool
+	select FB_MSM_MIPI_DSI_S6E8AA0_WXGA_Q1
+	default n
+
 config FB_MSM_MIPI_CHIMEI_WUXGA
 	bool "LVDS Chimei WUXGA Panel using Toshiba MIPI DSI-to-LVDS bridge."
 	select FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
@@ -418,6 +457,11 @@ config FB_MSM_MIPI_CHIMEI_WUXGA
 	  The panel is using a serial LVDS input.
 	  The panel is connected to the host
 	  via Toshiba DSI-to-LVDS bridge.
+
+config FB_MSM_MIPI_S6E8AA0_HD720_PT
+	bool
+	select FB_MSM_MIPI_DSI_S6E8AA0_HD720
+	default n
 
 config FB_MSM_MIPI_TRULY_VIDEO_WVGA_PT
 	bool
@@ -479,6 +523,13 @@ config FB_MSM_LCDC_CHIMEI_WXGA_PANEL
 	select FB_MSM_LCDC_CHIMEI_WXGA
 	---help---
 	  Support for LCDC Chimei WXGA (1366x768) panel
+
+config FB_MSM_LCDC_S6E63M0_WVGA_PANEL
+    depends on FB_MSM_LCDC_HW
+    bool "LCDC S6B63M0 WVGA Panel"
+    select FB_MSM_LCDC_S6E63M0_WVGA
+    ---help---
+      Support for LCDC S6E63M0 WVGA (480x800) panel
 
 config FB_MSM_LCDC_LD9040_WVGA_PANEL
 	depends on FB_MSM_LCDC_HW
@@ -736,6 +787,18 @@ config FB_MSM_MIPI_RENESAS_CMD_FWVGA_PT_PANEL
 config FB_MSM_MIPI_CHIMEI_WXGA_PANEL
 	bool "MIPI Chimei WXGA PT Panel"
 	select FB_MSM_MIPI_CHIMEI_WXGA
+
+config FB_MSM_MIPI_S6D6AA0_WXGA_PANEL
+	bool "MIPI S6D6AA0_WXGA Panel"
+	select FB_MSM_MIPI_S6D6AA0_WXGA_PT
+
+config FB_MSM_MIPI_S6E8AA0_HD720_PANEL
+	bool "MIPI S6E8AA0_HD720 Panel"
+	select FB_MSM_MIPI_S6E8AA0_HD720_PT
+	
+config FB_MSM_MIPI_S6E8AA0_WXGA_Q1_PANEL
+	bool "MIPI S6E8AA0)WXGA_Q1 Panel"
+	select FB_MSM_MIPI_S6E8AA0_WXGA_Q1_PT
 
 config FB_MSM_MIPI_CHIMEI_WUXGA_PANEL
 	bool "MIPI Chimei WUXGA Panel"
