@@ -278,7 +278,7 @@ obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-keypad.o board-sapphire-panel.o
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-mmc.o board-sapphire-wifi.o
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-rfkill.o msm_vibrator.o
 
-obj-$(CONFIG_BROADCOM_WIFI) +=broadcom_wlan.o
+obj-$(CONFIG_BROADCOM_WIFI) += broadcom_wlan.o
 
 CFLAGS_msm_vibrator.o += -Idrivers/staging/android
 

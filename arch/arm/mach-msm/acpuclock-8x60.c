@@ -32,9 +32,6 @@
 
 #include "acpuclock.h"
 #include "avs.h"
-#ifdef CONFIG_SEC_DEBUG_DCVS_LOG
-#include <mach/sec_debug.h>
-#endif
 
 /* Frequency switch modes. */
 #define SHOT_SWITCH		4
@@ -639,10 +636,6 @@ static int acpuclk_8x60_set_rate(int cpu, unsigned long rate,
 
 	pr_debug("Switching from ACPU%d rate %u KHz -> %u KHz\n",
 		cpu, strt_s->acpuclk_khz, tgt_s->acpuclk_khz);
-
-	#ifdef CONFIG_SEC_DEBUG_DCVS_LOG
-	sec_debug_dcvs_log(cpu, strt_s->acpuclk_khz, tgt_s->acpuclk_khz);
-	#endif
 
 	/* Switch CPU speed. */
 	switch_sc_speed(cpu, tgt_s);
